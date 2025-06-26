@@ -1,8 +1,22 @@
 require("dotenv").config();
+
+const mongoose = require("mongoose");
+
+
+
 const cookieParser = require("cookie-parser");
 const express = require("express");
 const path = require("path");
 const cors = require("cors");
+
+// Connect to MongoDB
+mongoose.connect(process.env.MONGODB_URI)
+.then(() => {
+  console.log(" MongoDB connected successfully");
+})
+.catch((err) => {
+  console.error(" MongoDB connection error:", err.message);
+});
 
 const app = express();
 const PORT = process.env.PORT || 3000;
