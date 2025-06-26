@@ -1,0 +1,43 @@
+version: "3.9"
+services:
+  react:
+    build:
+      context: ./react
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./react:/app
+      - /app/node_modules
+    environment:
+      - PORT=3001
+      - REACT_APP_API_URL=http://server:3000
+    stdin_open: true
+    tty: true
+
+  server:
+    build:
+      context: ./server
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./server:/usr/src/app
+      - /usr/src/app/node_modules
+    environment:
+      - PORT=3000
+      - CPP_PORT=4000
+      - CPP_HOST=cpp_server
+      - JWT_SECRET=someSuperSecretStringHere
+      - HOST=0.0.0.0
+    command: ["npm", "run", "dev"]
+    restart: unless-stopped
+    depends_on:
+      - cpp_server
+
+  cpp_server:
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+    ports:
+      - "4000:4000"
+    command: ["./cpp_server", "4000", "1024", "3", "5"]
+    restart: unless-stopped

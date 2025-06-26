@@ -1,0 +1,57 @@
+# Ignore object files
+*.o
+
+# Ignore executables
+*.exe
+*.out
+
+# Ignore build artifacts
+build/
+dist/
+
+# Ignore VSCode settings (personal)
+.vscode/
+
+# Ignore your compiled binary and temporary files
+main.exe
+src/*.o
+
+# Logs, backups, and other temp files
+*.log
+*.tmp
+*.bak
+*.swp
+.DS_Store
+main.exe
+
+# Ignore compiled object files and executables
+*.exe
+*.o
+*.out
+*.obj
+*.dll
+*.so
+*.a
+*.lib
+*.pdb
+
+# Ignore build folders
+/build/
+/bin/
+/dist/
+/debug/
+/release/
+
+# Ignore logs and temp files
+*.log
+*.tmp
+*.temp
+
+# Ignore editor/IDE settings
+.vscode/
+.idea/
+# ignoring mouduls
+node_modules/
+
+# ignore picture uploads    
+server/uploads/

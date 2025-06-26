@@ -1,0 +1,20 @@
+.mail-view-card {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(60,64,67,0.1);
+  padding: 2rem;
+  margin: 2rem 0;
+}
+
+.mail-view-card .card-header {
+  background: #f1f3f4;
+  border-radius: 12px 12px 0 0;
+  font-size: 1.05em;
+  font-weight: 500;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.mail-view-card .card-body {
+  font-size: 1.1em;
+  color: #222;
+}
