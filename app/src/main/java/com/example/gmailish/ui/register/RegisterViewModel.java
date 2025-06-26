@@ -1,47 +1,41 @@
 package com.example.gmailish.ui.register;
 
-
-import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 
 import com.example.gmailish.model.RegisterRequest;
-import com.google.gson.Gson;
 
+import java.io.File;
 import java.io.IOException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 import okhttp3.Call;
-import okhttp3.MediaType;
-import okhttp3.Request;
 import okhttp3.Callback;
+import okhttp3.MediaType;
+import okhttp3.MultipartBody;
 import okhttp3.OkHttpClient;
+import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 
-
 public class RegisterViewModel extends ViewModel {
-    private MutableLiveData<String> firstName = new MutableLiveData<>();
     public MutableLiveData<String> firstNameError = new MutableLiveData<>();
     public MutableLiveData<String> lastNameError = new MutableLiveData<>();
     public MutableLiveData<String> dobError = new MutableLiveData<>();
-    private MutableLiveData<String> lastName = new MutableLiveData<>();
-    private MutableLiveData<String> dob = new MutableLiveData<>();
-    private MutableLiveData<String> gender = new MutableLiveData<>();
-    private MutableLiveData<String> username = new MutableLiveData<>();
-    private MutableLiveData<String> password = new MutableLiveData<>();
-    public MutableLiveData<String> message = new MutableLiveData<>();
     public MutableLiveData<String> passwordError = new MutableLiveData<>();
-    public MutableLiveData<String> confirmError = new MutableLiveData<>();
+    public MutableLiveData<String> message = new MutableLiveData<>();
     public MutableLiveData<Boolean> registrationSuccess = new MutableLiveData<>();
 
+    private final OkHttpClient client = new OkHttpClient.Builder()
+            .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .build();
+    private final RegisterRequest request = new RegisterRequest();
 
-
-    private final OkHttpClient client = new OkHttpClient();
-
-    private RegisterRequest request = new RegisterRequest();
-
-
-    public void setName(String first, String last) {
+    public boolean setName(String first, String last) {
         boolean valid = true;
 
         if (first == null || first.trim().isEmpty()) {
@@ -49,6 +43,7 @@ public class RegisterViewModel extends ViewModel {
             valid = false;
         } else {
             firstNameError.setValue(null);
+            request.setFirstName(first);
         }
 
         if (last == null || last.trim().isEmpty()) {
@@ -56,59 +51,89 @@ public class RegisterViewModel extends ViewModel {
             valid = false;
         } else {
             lastNameError.setValue(null);
-        }
-
-        if (valid) {
-            request.setFirstName(first);
             request.setLastName(last);
         }
+        return valid;
     }
 
-    public void setDobAndGender(String d, String g) {
-        String dobValue = dob.getValue();
-        if (dobValue == null || !dobValue.matches("\\d{2}/\\d{2}/\\d{4}")) {
-            dobError.setValue("Invalid date format (dd/mm/yyyy)");
+    public boolean setDobAndGender(Date dob, String g) {
+        boolean valid = true;
+
+        if (dob == null){
+            dobError.setValue("Please enter your DOB");
+            valid = false;
         } else {
             dobError.setValue(null);
-            request.setDob(String.valueOf(dob));
-            request.setGender(String.valueOf(gender));
+            request.setDob(dob);
         }
+        if (g == null || g.trim().isEmpty()) {
+            message.setValue("Please select a gender");
+            valid = false;
+        } else {
+            request.setGender(g.trim());
+        }
+        return valid;
+        }
+
+    private String formatDate(Date date) {
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+        return sdf.format(date);
     }
 
-    public void setUsername(String user) {
-        username.setValue(user);
+
+
+    public boolean setUsernameAndPassword(String user, String pwd, String confirm) {
+        boolean valid = true;
+
+        if (user == null || user.trim().isEmpty()) {
+            message.setValue("Username is required");
+            valid = false;
+        } else {
+            request.setUsername(user.trim());
+        }
+
+        if (pwd == null || pwd.length() < 8) {
+            passwordError.setValue("Password must be at least 8 characters");
+            valid = false;
+        } else {
+            passwordError.setValue(null);
+            request.setPassword(pwd);
+        }
+
+        if (!pwd.equals(confirm)) {
+            passwordError.setValue("Passwords do not match");
+            valid = false;
+        }
+
+        return valid;
     }
 
-    public void setPassword(String pwd) {
-        password.setValue(pwd);
-    }
-
-    public void register(String confirmPassword) {
-        if (!confirmPassword.equals(password.getValue())) {
-            message.setValue("Passwords do not match.");
+    public void register(File imageFile) {
+        if (imageFile == null) {
+            message.postValue("Image file is required");
             return;
         }
 
-        if (password.getValue().length() < 8) {
-            message.setValue("Password must be at least 8 characters.");
-            return;
-        }
+        MultipartBody.Builder formBuilder = new MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("firstName", request.getFirstName())
+                .addFormDataPart("lastName", request.getLastName())
+                .addFormDataPart("username", request.getUsername())
+                .addFormDataPart("gender", request.getGender())
+                .addFormDataPart("password", request.getPassword())
+                .addFormDataPart("birthdate", formatDate(request.getDob()))  // Make sure it's in YYYY-MM-DD format
+                .addFormDataPart("picture", imageFile.getName(),
+                        RequestBody.create(imageFile, MediaType.parse("image/*")));
 
-        RegisterRequest user = new RegisterRequest(
-                firstName.getValue(),
-                lastName.getValue(),
-                dob.getValue(),
-                gender.getValue(),
-                username.getValue(),
-                password.getValue()
-        );
-        Gson gson = new Gson();
-        String json = gson.toJson(user);
+        MultipartBody requestBody = formBuilder.build();
 
-        RequestBody body = RequestBody.create(json, MediaType.get("application/json"));
-        Request request = new Request.Builder().url("http://10.0.2.2:3000/api/users/register").post(body).build();
 
-        client.newCall(request).enqueue(new Callback() {
+
+        Request httpRequest = new Request.Builder()
+                .url("http://10.0.2.2:3000/api/users")
+                .post(requestBody)
+                .build();
+        client.newCall(httpRequest).enqueue(new Callback() {
             @Override
             public void onFailure(Call call, IOException e) {
                 message.postValue("Network error: " + e.getMessage());
@@ -119,11 +144,11 @@ public class RegisterViewModel extends ViewModel {
                 if (response.isSuccessful()) {
                     message.postValue("Registered successfully!");
                     registrationSuccess.postValue(true);
-                    // Optional: trigger navigation event via LiveData
                 } else {
-                    message.postValue("Error: " + response.code() + " - " + response.body().string());
+                    message.postValue("Server error: " + response.code() + " - " + response.body().string());
                 }
             }
         });
     }
+
 }
