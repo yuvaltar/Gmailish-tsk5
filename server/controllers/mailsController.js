@@ -83,6 +83,7 @@ exports.sendMail = async (req, res) => {
     }
     console.error('sendMail error:', err);
     return res.status(500).json({ error: 'Internal server error' });
+
   }
 };
 
@@ -365,4 +366,5 @@ exports.toggleStar = async (req, res) => {
     console.error('toggleStar error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
+
 };

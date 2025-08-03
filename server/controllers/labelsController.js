@@ -66,4 +66,5 @@ exports.getEmailsByLabelName = async (req, res) => {
     console.error('getEmailsByLabelName error:', err);
     res.status(500).json({ error: 'Could not fetch emails for that label' });
   }
+
 };

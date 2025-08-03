@@ -1,4 +1,5 @@
-//servises/labels
+//services/labels
+
 const Label  = require('../models/label');
 const uuidv4 = require('../utils/uuid');
 
@@ -53,3 +54,4 @@ module.exports = {
   updateLabel,
   deleteLabel
 };
+

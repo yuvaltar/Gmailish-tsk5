@@ -1,4 +1,5 @@
-// server/services/mails.js
+// server/services/mail.js
+
 
 const Mail   = require('../models/mail');
 const User   = require('../models/user');
@@ -258,4 +259,5 @@ module.exports = {
   searchMails,
   searchMailsWithLabel,
   getEmailsByLabelName
+
 };
