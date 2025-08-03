@@ -1,9 +1,11 @@
 <resources>
     <string name="app_name">Gmailish</string>
+    <string name="welcome">Welcome to Gmailish!\nLet\'s get started.</string>
     <string-array name="gender_array">
         <item>Male</item>
         <item>Female</item>
         <item>Other</item>
     </string-array>
+
 
 </resources>
