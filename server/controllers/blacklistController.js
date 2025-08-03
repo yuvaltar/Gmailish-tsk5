@@ -1,30 +1,38 @@
-//blacklistcontroller
-const { sendToCpp } = require('../services/blacklistService');
+// server/controllers/blacklistController.js
+const {
+  addUrl,
+  removeUrl
+} = require('../services/blacklistService');
 
-// Add a URL to the blacklist
+// POST /api/blacklist
 exports.addToBlacklist = async (req, res) => {
-  const { id } = req.body;
-  if (!id) return res.status(400).json({ error: 'Missing URL' });
-
-  const result = (await sendToCpp(`POST ${id}`)).trim();
-
-  if (result === '201 Created') {
+  const { id: url } = req.body;
+  if (!url) {
+    return res.status(400).json({ error: 'Missing URL' });
+  }
+  try {
+    await addUrl(url);
     return res.status(201).json({ message: 'URL added to blacklist' });
+  } catch (err) {
+    if (err.code === 409) {
+      return res.status(409).json({ error: err.message });
+    }
+    console.error('addToBlacklist error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
   }
-  if (result === '409 Conflict') {
-    return res.status(409).json({ error: 'URL already blacklisted' });
-  }
-
-  return res.status(500).json({ error: 'Unexpected response from C++ server' });
 };
 
-// Remove a URL from the blacklist
+// DELETE /api/blacklist/:id
 exports.removeFromBlacklist = async (req, res) => {
-  const { id } = req.params;
-  const result = (await sendToCpp(`DELETE ${id}`)).trim();
-
-  if (result === '204 No Content') return res.status(200).json({ message: 'URL removed from blacklist' });
-  if (result === '404 Not Found') return res.status(404).json({ error: 'URL not found in blacklist' });
-
-  return res.status(500).json({ error: 'Unexpected response from C++ server' });
+  const url = req.params.id;
+  try {
+    await removeUrl(url);
+    return res.status(200).json({ message: 'URL removed from blacklist' });
+  } catch (err) {
+    if (err.code === 404) {
+      return res.status(404).json({ error: err.message });
+    }
+    console.error('removeFromBlacklist error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
 };
