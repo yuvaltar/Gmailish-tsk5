@@ -1,57 +1,63 @@
-# Ignore object files
-*.o
-
-# Ignore executables
-*.exe
-*.out
-
-# Ignore build artifacts
-build/
-dist/
-
-# Ignore VSCode settings (personal)
-.vscode/
-
-# Ignore your compiled binary and temporary files
-main.exe
-src/*.o
-
-# Logs, backups, and other temp files
-*.log
-*.tmp
-*.bak
-*.swp
+# --- OS / Editor noise ---
 .DS_Store
-main.exe
+*.swp
+*.tmp
+*.temp
+*.bak
+*.log
 
-# Ignore compiled object files and executables
-*.exe
+# --- Compiled / binaries (general) ---
+*.class
 *.o
-*.out
 *.obj
-*.dll
 *.so
+*.dll
 *.a
 *.lib
 *.pdb
+*.exe
+*.out
 
-# Ignore build folders
-/build/
-/bin/
-/dist/
-/debug/
-/release/
+# --- Android / Gradle ---
+# Local caches & generated files
+.gradle/
+**/build/
+**/.cxx/
+.cxx/
 
-# Ignore logs and temp files
-*.log
-*.tmp
-*.temp
+# Local machine config (contains your SDK path)
+local.properties
 
-# Ignore editor/IDE settings
-.vscode/
+# Keystores (DO NOT commit real signing keys)
+*.jks
+*.keystore
+
+# NDK / CMake intermediates
+.externalNativeBuild/
+captures/
+
+# Kotlin/Annotation processing
+.kotlinc/
+**/kotlin/**/build/
+
+# --- Android Studio / IntelliJ ---
 .idea/
-# ignoring mouduls
-node_modules/
+*.iml
 
-# ignore picture uploads    
+# --- Node / server artifacts you mentioned ---
+node_modules/
 server/uploads/
+
+# --- Other common build dirs ---
+/bin/
+dist/
+debug/
+release/
+
+# --- Keep Gradle wrapper (DO NOT ignore these) ---
+# gradlew, gradlew.bat, and gradle/wrapper/* must stay tracked.
+# (Nothing to ignore here; this comment is just a reminder.)
+NUL
+CON
+PRN
+AUX
