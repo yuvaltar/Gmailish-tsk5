@@ -15,6 +15,7 @@ import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
@@ -38,6 +39,8 @@ public class RegisterActivity extends AppCompatActivity {
 
     private RegisterViewModel viewModel;
     private ProgressBar progressBar;
+    private TextView stepIndicator;
+    private LinearLayout progressSection;
 
     private LinearLayout welcomeBlock, stepName, stepDobGender, stepUsername;
 
@@ -48,14 +51,17 @@ public class RegisterActivity extends AppCompatActivity {
     private Date selectedDob = null;
 
     private ImageView imagePreview;
+    private ImageView logo;
     private Button selectImageButton;
+
+    // Back buttons
+    private Button backToWelcome, backToStep1, backToStep2;
+
     private Uri selectedImageUri = null;
 
     private File imageFile;
     private static final int PICK_IMAGE_REQUEST = 1;
     private ActivityResultLauncher<Intent> imagePickerLauncher;
-
-
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -64,6 +70,8 @@ public class RegisterActivity extends AppCompatActivity {
 
         viewModel = new ViewModelProvider(this).get(RegisterViewModel.class);
         progressBar = findViewById(R.id.progressBar);
+        stepIndicator = findViewById(R.id.step_indicator);
+        progressSection = findViewById(R.id.progress_section);
         progressBar.setProgress(0);
 
         imagePickerLauncher = registerForActivityResult(
@@ -112,6 +120,13 @@ public class RegisterActivity extends AppCompatActivity {
         imagePreview = findViewById(R.id.imagePreview);
         selectImageButton = findViewById(R.id.button_select_image);
 
+        // Initialize logo ImageView (automatically handles day/night mode switching)
+        logo = findViewById(R.id.logo);
+
+        // Initialize back buttons
+        backToWelcome = findViewById(R.id.back_to_welcome);
+        backToStep1 = findViewById(R.id.back_to_step1);
+        backToStep2 = findViewById(R.id.back_to_step2);
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -164,17 +179,22 @@ public class RegisterActivity extends AppCompatActivity {
         }
     }
 
-
     private void setupButtonListeners() {
         Button startRegister = findViewById(R.id.button_start_register);
         Button next1 = findViewById(R.id.next1);
         Button next2 = findViewById(R.id.next2);
         Button submitButton = findViewById(R.id.submitRegistration);
 
+        // Forward navigation buttons
         startRegister.setOnClickListener(v -> {
             welcomeBlock.setVisibility(View.GONE);
             stepName.setVisibility(View.VISIBLE);
-            progressBar.setProgress(1);
+            progressSection.setVisibility(View.VISIBLE);
+
+            // Show the back button for step 1
+            backToWelcome.setVisibility(View.VISIBLE);
+
+            updateProgress(1, "Step 1 of 3");
         });
 
         selectImageButton.setOnClickListener(v -> {
@@ -183,25 +203,30 @@ public class RegisterActivity extends AppCompatActivity {
             imagePickerLauncher.launch(intent);
         });
 
-
         next1.setOnClickListener(v -> {
             boolean valid = viewModel.setName(
                     firstNameInput.getText().toString(),
                     lastNameInput.getText().toString()
             );
             if (valid) {
-                if (selectedImageUri == null) {
-                    Toast.makeText(this, "Please select a profile image", Toast.LENGTH_SHORT).show();
-                    return;
+                // Photo is now optional - create imageFile only if image is selected
+                if (selectedImageUri != null) {
+                    imageFile = getFileFromUri(selectedImageUri);
+                    if (imageFile == null) {
+                        Toast.makeText(this, "Selected image could not be processed, continuing without image", Toast.LENGTH_SHORT).show();
+                    }
+                } else {
+                    imageFile = null; // No image selected, that's okay
                 }
-                imageFile = getFileFromUri(selectedImageUri);
-                if (imageFile == null) {
-                    Toast.makeText(this, "Image could not be processed", Toast.LENGTH_SHORT).show();
-                    return;
-                }
+
                 stepName.setVisibility(View.GONE);
                 stepDobGender.setVisibility(View.VISIBLE);
-                progressBar.setProgress(2);
+
+                // Switch back buttons
+                backToWelcome.setVisibility(View.GONE);
+                backToStep1.setVisibility(View.VISIBLE);
+
+                updateProgress(2, "Step 2 of 3");
             }
         });
 
@@ -211,7 +236,12 @@ public class RegisterActivity extends AppCompatActivity {
             if (valid) {
                 stepDobGender.setVisibility(View.GONE);
                 stepUsername.setVisibility(View.VISIBLE);
-                progressBar.setProgress(3);
+
+                // Switch back buttons
+                backToStep1.setVisibility(View.GONE);
+                backToStep2.setVisibility(View.VISIBLE);
+
+                updateProgress(3, "Step 3 of 3");
             }
         });
 
@@ -222,9 +252,48 @@ public class RegisterActivity extends AppCompatActivity {
                     confirmInput.getText().toString()
             );
             if (valid) {
-                viewModel.register(imageFile);
+                viewModel.register(imageFile); // imageFile can be null now
             }
         });
+
+        // Back navigation buttons
+        backToWelcome.setOnClickListener(v -> {
+            stepName.setVisibility(View.GONE);
+            welcomeBlock.setVisibility(View.VISIBLE);
+            progressSection.setVisibility(View.GONE);
+            backToWelcome.setVisibility(View.GONE);
+            clearErrors();
+        });
+
+        backToStep1.setOnClickListener(v -> {
+            stepDobGender.setVisibility(View.GONE);
+            stepName.setVisibility(View.VISIBLE);
+            backToStep1.setVisibility(View.GONE);
+            backToWelcome.setVisibility(View.VISIBLE);
+            updateProgress(1, "Step 1 of 3");
+            clearErrors();
+        });
+
+        backToStep2.setOnClickListener(v -> {
+            stepUsername.setVisibility(View.GONE);
+            stepDobGender.setVisibility(View.VISIBLE);
+            backToStep2.setVisibility(View.GONE);
+            backToStep1.setVisibility(View.VISIBLE);
+            updateProgress(2, "Step 2 of 3");
+            clearErrors();
+        });
+    }
+
+    private void updateProgress(int step, String stepText) {
+        progressBar.setProgress(step);
+        stepIndicator.setText(stepText);
+    }
+
+    private void clearErrors() {
+        firstNameInput.setError(null);
+        lastNameInput.setError(null);
+        dobInput.setError(null);
+        passwordInput.setError(null);
     }
 
     private File getFileFromUri(Uri uri) {
@@ -249,7 +318,6 @@ public class RegisterActivity extends AppCompatActivity {
         return file;
     }
 
-
     private void setupObservers() {
         viewModel.firstNameError.observe(this, err -> {
             if (err != null) firstNameInput.setError(err);
@@ -272,5 +340,23 @@ public class RegisterActivity extends AppCompatActivity {
                 startActivity(intent);
             }
         });
+    }
+
+    @Override
+    public void onBackPressed() {
+        // Handle hardware back button
+        if (stepUsername.getVisibility() == View.VISIBLE) {
+            // From step 3 to step 2
+            backToStep2.performClick();
+        } else if (stepDobGender.getVisibility() == View.VISIBLE) {
+            // From step 2 to step 1
+            backToStep1.performClick();
+        } else if (stepName.getVisibility() == View.VISIBLE) {
+            // From step 1 to welcome
+            backToWelcome.performClick();
+        } else {
+            // From welcome screen - exit app
+            super.onBackPressed();
+        }
     }
 }
