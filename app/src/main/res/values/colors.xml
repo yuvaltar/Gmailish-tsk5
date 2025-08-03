@@ -2,4 +2,14 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="purple_500">#6200EE</color>
+    <color name="purple_700">#3700B3</color>
+    <!-- optional: keep if your layout uses it -->
+    <color name="purple_200">#BB86FC</color>
+    <color name="ic_launcher_background">#FFFFFF</color>
+    <color name="gmail_background">#F6F8FC</color>
+    <color name="gmail_search_bg">#F1F3F4</color>
+    <color name="gmail_primary_text">#202124</color>
+    <color name="gmail_hint_text">#80868B</color>
+    <color name="gmail_compose_purple">#6200EE</color>
 </resources>
