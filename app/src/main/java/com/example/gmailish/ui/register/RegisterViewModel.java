@@ -73,14 +73,12 @@ public class RegisterViewModel extends ViewModel {
             request.setGender(g.trim());
         }
         return valid;
-        }
+    }
 
     private String formatDate(Date date) {
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
         return sdf.format(date);
     }
-
-
 
     public boolean setUsernameAndPassword(String user, String pwd, String confirm) {
         boolean valid = true;
@@ -109,11 +107,7 @@ public class RegisterViewModel extends ViewModel {
     }
 
     public void register(File imageFile) {
-        if (imageFile == null) {
-            message.postValue("Image file is required");
-            return;
-        }
-
+        // Build the multipart form - photo is now optional
         MultipartBody.Builder formBuilder = new MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
                 .addFormDataPart("firstName", request.getFirstName())
@@ -121,18 +115,21 @@ public class RegisterViewModel extends ViewModel {
                 .addFormDataPart("username", request.getUsername())
                 .addFormDataPart("gender", request.getGender())
                 .addFormDataPart("password", request.getPassword())
-                .addFormDataPart("birthdate", formatDate(request.getDob()))  // Make sure it's in YYYY-MM-DD format
-                .addFormDataPart("picture", imageFile.getName(),
-                        RequestBody.create(imageFile, MediaType.parse("image/*")));
+                .addFormDataPart("birthdate", formatDate(request.getDob()));
+
+        // Only add picture part if imageFile exists
+        if (imageFile != null && imageFile.exists()) {
+            formBuilder.addFormDataPart("picture", imageFile.getName(),
+                    RequestBody.create(imageFile, MediaType.parse("image/*")));
+        }
 
         MultipartBody requestBody = formBuilder.build();
-
-
 
         Request httpRequest = new Request.Builder()
                 .url("http://10.0.2.2:3000/api/users")
                 .post(requestBody)
                 .build();
+
         client.newCall(httpRequest).enqueue(new Callback() {
             @Override
             public void onFailure(Call call, IOException e) {
@@ -150,5 +147,4 @@ public class RegisterViewModel extends ViewModel {
             }
         });
     }
-
 }
