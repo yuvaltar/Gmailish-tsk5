@@ -14,14 +14,16 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/Theme.Gmailish">
 
-        <activity
-            android:name=".ui.register.RegisterActivity"
+        <activity android:name=".ui.register.RegisterActivity" />
+        <activity android:name=".ui.login.LoginActivity"
             android:exported="true">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <activity android:name=".ui.inbox.InboxActivity" />
+
     </application>
 
 </manifest>
