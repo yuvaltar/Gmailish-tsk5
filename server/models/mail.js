@@ -19,4 +19,5 @@ const mailSchema = new mongoose.Schema({
   read:           { type: Boolean, required: true, default: false }
 });
 
+
 module.exports = mongoose.model('Mail', mailSchema);

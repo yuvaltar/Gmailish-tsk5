@@ -1,5 +1,6 @@
 // server/services/mail.js
 
+
 const Mail   = require('../models/mail');
 const User   = require('../models/user');
 const uuidv4 = require('../utils/uuid');
@@ -258,4 +259,5 @@ module.exports = {
   searchMails,
   searchMailsWithLabel,
   getEmailsByLabelName
+
 };
