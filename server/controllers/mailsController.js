@@ -1,8 +1,12 @@
 // server/controllers/mailsController.js
 
-const mailsService = require('../services/mail');
-const Mail         = require('../models/mail');
-const { sendToCpp } = require('../services/blacklistService');
+const mailsService        = require('../services/mail');
+const Mail                = require('../models/mail');
+const {
+  isBlacklisted,
+  addUrl,
+  removeUrl
+} = require('../services/blacklistService');
 
 const URL_REGEX = /(?:(?:file:\/\/(?:[A-Za-z]:)?(?:\/[^s]*)?)|(?:[A-Za-z][A-Za-z0-9+\-\.]*:\/\/)?(?:localhost|(?:[A-Za-z0-9\-]+\.)+[A-Za-z0-9\-]+|(?:\d{1,3}\.){3}\d{1,3})(?::\d+)?(?:\/[^s]*)?)/g;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -16,7 +20,6 @@ exports.saveDraft = async (req, res) => {
     if (!subject && !content && !to) {
       return res.status(400).json({ error: 'Draft is empty' });
     }
-    // 'to' must be a valid userId
     const draft = await mailsService.saveDraft(
       req.user.id,
       to,
@@ -34,22 +37,13 @@ exports.saveDraft = async (req, res) => {
 };
 
 /**
- * Send a new mail (inbox + sent copies).
- * Applies blacklist check before creation.
+ * Check if any URL is blacklisted (via Mongo).
  */
 async function containsBlacklistedUrl(text) {
-  const matches = Array.from(text.matchAll(URL_REGEX), m => m[0]);
-  for (const url of matches) {
-    const result = await sendToCpp(`GET ${url}`);
-    if (result.startsWith('200 Ok')) {
-      const flags = result.split('\n').slice(1).join(' ').trim();
-      if (flags === 'true true') {
-        return { blacklisted: true, url };
-      }
-    } else if (result.startsWith('404 Not Found')) {
-      continue;
-    } else {
-      return { error: true, url };
+  const urls = Array.from(text.matchAll(URL_REGEX), m => m[0]);
+  for (const url of urls) {
+    if (await isBlacklisted(url)) {
+      return { blacklisted: true, url };
     }
   }
   return { blacklisted: false };
@@ -62,7 +56,7 @@ exports.sendMail = async (req, res) => {
       return res.status(400).json({ error: 'Missing fields' });
     }
 
-    // Check URLs against blacklist
+    // Check URLs against our Mongo blacklist
     const check = await containsBlacklistedUrl(`${subject} ${content}`);
     if (check.error) {
       return res.status(500).json({ error: `Blacklist error for ${check.url}` });
@@ -94,14 +88,9 @@ exports.getInbox = async (req, res) => {
   try {
     const userId = req.user.id;
     const { label } = req.query;
-
-    let list;
-    if (label) {
-      list = await mailsService.getEmailsByLabelName(label, userId);
-    } else {
-      list = await mailsService.getInboxForUser(userId);
-    }
-
+    const list = label
+      ? await mailsService.getEmailsByLabelName(label, userId)
+      : await mailsService.getInboxForUser(userId);
     return res.status(200).json(list);
   } catch (err) {
     console.error('getInbox error:', err);
@@ -123,7 +112,7 @@ exports.getSpam = async (req, res) => {
 };
 
 /**
- * Toggle the spam label and update the external blacklist.
+ * Toggle the spam label and update the Mongo blacklist.
  */
 exports.toggleSpam = async (req, res) => {
   try {
@@ -132,32 +121,27 @@ exports.toggleSpam = async (req, res) => {
       return res.status(404).json({ error: 'Mail not found or not owned by you' });
     }
 
-    const text = `${mail.subject} ${mail.content}`;
-    const urls = Array.from(text.matchAll(URL_REGEX), m => m[0]);
+    const urls = Array.from(`${mail.subject} ${mail.content}`.matchAll(URL_REGEX), m => m[0]);
 
     if (mail.labels.includes('spam')) {
-      // unmark spam
+      // Unmark spam: remove label + remove from Mongo blacklist
       mail.labels = mail.labels.filter(l => l !== 'spam');
       for (const url of urls) {
-        await sendToCpp(`DELETE ${url}`);
+        await removeUrl(url);
         await delay(50);
       }
-      await mail.save();
-      return res.status(200).json({ message: 'Unmarked as spam', mail: mail.toObject() });
     } else {
-      // mark spam
+      // Mark spam: add label + add to Mongo blacklist
       mail.labels.push('spam');
       for (const url of urls) {
-        const result = (await sendToCpp(`POST ${url}`)).trim();
-        if (!['201 Created', '409 Conflict'].includes(result)) {
-          console.error('Blacklist error on:', url, '→', result);
-          return res.status(500).json({ error: `Failed to blacklist ${url}: ${result}` });
-        }
+        await addUrl(url);
         await delay(50);
       }
-      await mail.save();
-      return res.status(200).json({ message: 'Marked as spam', mail: mail.toObject() });
     }
+
+    await mail.save();
+    const message = mail.labels.includes('spam') ? 'Marked as spam' : 'Unmarked as spam';
+    return res.status(200).json({ message, mail: mail.toObject() });
   } catch (err) {
     console.error('toggleSpam error:', err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -286,14 +270,13 @@ exports.addLabelToEmail = async (req, res) => {
  */
 exports.removeLabelFromEmail = async (req, res) => {
   try {
-    const { label } = req.params;
     const mail = await Mail.findOne({ id: req.params.id, ownerId: req.user.id });
     if (!mail) {
       return res.status(404).json({ error: 'Mail not found or not owned by you' });
     }
-    mail.labels = mail.labels.filter(l => l !== label);
+    mail.labels = mail.labels.filter(l => l !== req.params.label);
     await mail.save();
-    return res.status(200).json({ message: `Label '${label}' removed`, mail: mail.toObject() });
+    return res.status(200).json({ message: `Label '${req.params.label}' removed`, mail: mail.toObject() });
   } catch (err) {
     console.error('removeLabelFromEmail error:', err);
     return res.status(500).json({ error: 'Internal server error' });
