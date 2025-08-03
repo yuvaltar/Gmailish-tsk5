@@ -1,6 +1,7 @@
 package com.example.gmailish.ui.login;
 
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.widget.Button;
 import android.widget.EditText;
@@ -32,23 +33,25 @@ public class LoginActivity extends AppCompatActivity {
         btnLogin.setOnClickListener(v -> {
             String email = editEmail.getText().toString().trim();
             String password = editPassword.getText().toString();
-
             viewModel.login(email, password);
         });
 
         viewModel.loginResult.observe(this, success -> {
             if (success) {
+                // Save JWT to SharedPreferences
+                String jwt = viewModel.getToken();  // ⬅️ add this method to your ViewModel
+                SharedPreferences prefs = getSharedPreferences("prefs", MODE_PRIVATE);
+                prefs.edit().putString("jwt", jwt).apply();
+
                 Toast.makeText(this, "Login successful!", Toast.LENGTH_SHORT).show();
-                // TODO: Replace InboxActivity with your real inbox screen
-                Intent intent = new Intent(this, InboxActivity.class);
-                startActivity(intent);
+                startActivity(new Intent(this, InboxActivity.class));
                 finish();
             }
         });
 
-        viewModel.error.observe(this, msg ->
-                Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
-        );
+        viewModel.error.observe(this, msg -> {
+            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
+        });
 
         textRegister.setOnClickListener(v -> {
             Intent intent = new Intent(this, RegisterActivity.class);
