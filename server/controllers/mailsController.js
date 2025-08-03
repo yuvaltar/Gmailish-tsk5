@@ -342,6 +342,7 @@ exports.markAllAsRead = async (req, res) => {
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
+
 /**
  * Toggle the "star" label on a mail.
  */

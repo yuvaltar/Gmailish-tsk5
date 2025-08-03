@@ -1,20 +1,21 @@
 // server/controllers/tokenController.js
 
-const jwt  = require("jsonwebtoken");
-const User = require("../models/user");
+const jwt                     = require("jsonwebtoken");
+// Use the user service instead of direct model access
+const { validateCredentials } = require("../services/user");
 
 exports.login = async (req, res) => {
   const { email, password } = req.body;
+
   // 1. Basic validation
   if (!email || !password) {
     return res.status(400).json({ error: "Email and password required" });
   }
 
   try {
-    // 2. Fetch user from Mongo
-    const user = await User.findOne({ email }).lean();
-    // 3. Check credentials (plaintext or hashed)
-    if (!user || user.password !== password) {
+    // 2+3. Validate credentials via service (returns user or null)
+    const user = await validateCredentials(email, password);
+    if (!user) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
@@ -34,6 +35,7 @@ exports.login = async (req, res) => {
         maxAge: 2 * 60 * 60 * 1000, // 2 hours
       })
       .json({ message: "Login successful" });
+
   } catch (err) {
     console.error("login error:", err);
     return res.status(500).json({ error: "Internal server error" });
