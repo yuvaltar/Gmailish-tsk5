@@ -1,3 +1,4 @@
+// routes/mails
 const express = require('express');
 const router = express.Router();
 const mailsController = require('../controllers/mailsController');
