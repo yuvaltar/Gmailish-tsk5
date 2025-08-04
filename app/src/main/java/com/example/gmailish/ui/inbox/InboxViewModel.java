@@ -52,25 +52,69 @@ public class InboxViewModel extends ViewModel {
                     return;
                 }
 
-                List<Email> parsedEmails = new ArrayList<>();
-                try {
-                    JSONArray jsonArray = new JSONArray(response.body().string());
-                    for (int i = 0; i < jsonArray.length(); i++) {
-                        JSONObject obj = jsonArray.getJSONObject(i);
-                        parsedEmails.add(new Email(
-                                obj.optString("senderName"),
-                                obj.optString("subject"),
-                                obj.optString("content"),
-                                obj.optString("timestamp"),
-                                obj.optBoolean("read"),
-                                obj.optBoolean("starred")
-                        ));
-                    }
+                List<Email> parsedEmails = parseEmailList(response);
+                if (parsedEmails != null) {
                     emailsLiveData.postValue(parsedEmails);
-                } catch (Exception e) {
-                    errorLiveData.postValue("JSON error: " + e.getMessage());
                 }
             }
         });
+    }
+
+    public void searchEmails(String query) {
+        errorLiveData.setValue(null);
+
+        Request request = new Request.Builder()
+                .url("http://10.0.2.2:3000/api/mails/search?query=" + query)
+                .header("Authorization", "Bearer " + getJwtToken()) // Optional: handle JWT more cleanly
+                .build();
+
+        client.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                errorLiveData.postValue("Search error: " + e.getMessage());
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
+                if (!response.isSuccessful()) {
+                    errorLiveData.postValue("Search failed: " + response.code());
+                    return;
+                }
+
+                List<Email> parsedEmails = parseEmailList(response);
+                if (parsedEmails != null) {
+                    emailsLiveData.postValue(parsedEmails);
+                }
+            }
+        });
+    }
+
+    private List<Email> parseEmailList(Response response) throws IOException {
+        try {
+            List<Email> parsedEmails = new ArrayList<>();
+            JSONArray jsonArray = new JSONArray(response.body().string());
+
+            for (int i = 0; i < jsonArray.length(); i++) {
+                JSONObject obj = jsonArray.getJSONObject(i);
+                parsedEmails.add(new Email(
+                        obj.optString("senderName"),
+                        obj.optString("subject"),
+                        obj.optString("content"),
+                        obj.optString("timestamp"),
+                        obj.optBoolean("read"),
+                        obj.optBoolean("starred")
+                ));
+            }
+
+            return parsedEmails;
+        } catch (Exception e) {
+            errorLiveData.postValue("JSON parse error: " + e.getMessage());
+            return null;
+        }
+    }
+
+    // Optional helper if you want to fetch JWT internally (instead of passing it into searchEmails)
+    private String getJwtToken() {
+        return ""; // implement this if needed (via Application context + SharedPreferences)
     }
 }

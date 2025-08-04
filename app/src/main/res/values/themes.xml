@@ -3,9 +3,8 @@
     <style name="Base.Theme.Gmailish" parent="Theme.Material3.DayNight.NoActionBar" >
         <!-- Customize your light theme here. -->
         <!-- <item name="colorPrimary">@color/my_light_primary</item> -->
+        <item name="android:statusBarColor">#FFFFFF</item>
     </style>
 
     <style name="Theme.Gmailish" parent="Base.Theme.Gmailish" />
-
-
 </resources>
