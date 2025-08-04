@@ -9,6 +9,7 @@ import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 
 import com.example.gmailish.model.Email;
+import com.example.gmailish.model.User;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -30,6 +31,9 @@ public class InboxViewModel extends AndroidViewModel {
     private final MutableLiveData<String> errorLiveData = new MutableLiveData<>();
     private final OkHttpClient client = new OkHttpClient();
 
+    private final MutableLiveData<User> currentUserLiveData = new MutableLiveData<>();
+
+
     public InboxViewModel(Application application) {
         super(application);
     }
@@ -40,6 +44,47 @@ public class InboxViewModel extends AndroidViewModel {
 
     public LiveData<String> getError() {
         return errorLiveData;
+    }
+
+    public LiveData<User> getCurrentUserLiveData() {
+        return currentUserLiveData;
+    }
+
+    public void loadCurrentUser() {
+        String token = getJwtToken();
+        if (token == null) return;
+
+        Request request = new Request.Builder()
+                .url("http://10.0.2.2:3000/api/users/me")
+                .addHeader("Authorization", "Bearer " + token)
+                .build();
+
+        client.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                Log.e("CurrentUser", "Failed to fetch: " + e.getMessage());
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
+                if (!response.isSuccessful()) {
+                    Log.e("CurrentUser", "Response error: " + response.code());
+                    return;
+                }
+
+                try {
+                    String body = response.body().string();
+                    JSONObject json = new JSONObject(body);
+                    String id = json.optString("id");
+                    String username = json.optString("username");
+                    String picture = json.optString("picture", "");
+
+                    currentUserLiveData.postValue(new User(id, username, picture));
+                } catch (Exception e) {
+                    Log.e("CurrentUser", "Parse error: " + e.getMessage());
+                }
+            }
+        });
     }
 
     public void loadEmails(String jwtToken) {
@@ -107,7 +152,8 @@ public class InboxViewModel extends AndroidViewModel {
                                 obj.optString("content"),
                                 obj.optString("timestamp"),
                                 obj.optBoolean("read"),
-                                obj.optBoolean("starred")
+                                obj.optBoolean("starred"),
+                                obj.optString("id")
                         ));
                     }
 
@@ -136,7 +182,8 @@ public class InboxViewModel extends AndroidViewModel {
                         obj.optString("content"),
                         obj.optString("timestamp"),
                         obj.optBoolean("read"),
-                        obj.optBoolean("starred")
+                        obj.optBoolean("starred"),
+                        obj.optString("id")
                 ));
             }
 
@@ -152,4 +199,5 @@ public class InboxViewModel extends AndroidViewModel {
                 .getSharedPreferences("prefs", Context.MODE_PRIVATE);
         return prefs.getString("jwt", null);
     }
+
 }

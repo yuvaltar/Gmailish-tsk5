@@ -1,5 +1,6 @@
 package com.example.gmailish.ui.inbox;
 
+import android.content.Intent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -10,6 +11,7 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.gmailish.R;
+import com.example.gmailish.mail.MailViewActivity;
 import com.example.gmailish.model.Email;
 
 import java.util.ArrayList;
@@ -61,6 +63,12 @@ public class EmailAdapter extends RecyclerView.Adapter<EmailAdapter.EmailViewHol
         holder.content.setText(email.content);
         holder.timestamp.setText(email.timestamp);
         holder.senderIcon.setText(email.senderName.substring(0, 1).toUpperCase());
+        holder.itemView.setOnClickListener(v -> {
+            android.util.Log.d("DEBUG", "Opening mail with ID: " + email.id);
+            Intent intent = new Intent(v.getContext(), MailViewActivity.class);
+            intent.putExtra("mailId", String.valueOf(email.id)); // send the ID
+            v.getContext().startActivity(intent);
+        });
 
         holder.itemView.setAlpha(email.read ? 0.6f : 1.0f);
 
@@ -68,6 +76,7 @@ public class EmailAdapter extends RecyclerView.Adapter<EmailAdapter.EmailViewHol
                 android.R.drawable.btn_star_big_on :
                 android.R.drawable.btn_star_big_off);
     }
+
 
     @Override
     public int getItemCount() {
