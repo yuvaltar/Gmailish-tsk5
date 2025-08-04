@@ -107,7 +107,8 @@ public class InboxViewModel extends AndroidViewModel {
                                 obj.optString("content"),
                                 obj.optString("timestamp"),
                                 obj.optBoolean("read"),
-                                obj.optBoolean("starred")
+                                obj.optBoolean("starred"),
+                                obj.optString("id")
                         ));
                     }
 
@@ -136,7 +137,8 @@ public class InboxViewModel extends AndroidViewModel {
                         obj.optString("content"),
                         obj.optString("timestamp"),
                         obj.optBoolean("read"),
-                        obj.optBoolean("starred")
+                        obj.optBoolean("starred"),
+                        obj.optString("id")
                 ));
             }
 
