@@ -27,6 +27,11 @@
 
         <activity android:name=".ui.login.LoginActivity" />
 
+        <activity android:name=".ui.inbox.CreateLabelActivity" />
+
+
+
+
         <activity android:name=".ui.inbox.InboxActivity" />
         <activity android:name=".ui.compose.ComposeActivity" />
         <activity android:name=".mail.MailViewActivity" />

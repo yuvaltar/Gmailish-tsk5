@@ -199,5 +199,42 @@ public class InboxViewModel extends AndroidViewModel {
                 .getSharedPreferences("prefs", Context.MODE_PRIVATE);
         return prefs.getString("jwt", null);
     }
+    public void loadEmailsByLabel(String label) {
+        errorLiveData.setValue(null);
+
+        String token = getJwtToken();
+        if (token == null) {
+            errorLiveData.postValue("JWT token missing");
+            return;
+        }
+
+        String url = "http://10.0.2.2:3000/api/mails?label=" + label;
+
+        Request request = new Request.Builder()
+                .url(url)
+                .header("Authorization", "Bearer " + token)
+                .build();
+
+        client.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                errorLiveData.postValue("Failed to load '" + label + "': " + e.getMessage());
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
+                if (!response.isSuccessful()) {
+                    errorLiveData.postValue("Server error " + response.code() + " loading '" + label + "'");
+                    return;
+                }
+
+                List<Email> parsed = parseEmailList(response);
+                if (parsed != null) {
+                    emailsLiveData.postValue(parsed);
+                }
+            }
+        });
+    }
+
 
 }

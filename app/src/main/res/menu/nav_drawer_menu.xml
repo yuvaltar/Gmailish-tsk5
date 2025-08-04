@@ -48,6 +48,21 @@
         <item android:id="@+id/nav_spam"      android:title="Spam"      android:icon="@drawable/ic_spam" />
         <item android:id="@+id/nav_trash"     android:title="Trash"     android:icon="@drawable/ic_delete" />
     </group>
+    <!-- Section title -->
+    <item
+        android:id="@+id/nav_label_section"
+        android:title="LABELS"
+        android:enabled="false"
+        android:checkable="false" />
+
+    <group android:id="@+id/dynamic_labels_group" android:checkableBehavior="single" />
+    <!-- Create New -->
+    <item
+        android:id="@+id/nav_create_label"
+        android:title="Create new"
+        android:icon="@drawable/ic_add_plus" />
+
+
 
     <group>
         <item android:id="@+id/nav_calendar"  android:title="Calendar"          android:icon="@drawable/ic_calendar" />
