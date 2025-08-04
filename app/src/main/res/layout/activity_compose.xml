@@ -1,39 +1,104 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:orientation="vertical"
+    android:fitsSystemWindows="true"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="16dp">
+    android:background="#F8F6F9">
 
-    <LinearLayout
-        android:orientation="vertical"
+    <!-- Top Bar -->
+    <RelativeLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content">
+        android:layout_height="64dp"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="10dp"
+        android:background="#F8F6F9">
 
-        <EditText
-            android:id="@+id/editRecipient"
+        <ImageView
+            android:id="@+id/backButton"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="8dp"
+            android:src="@drawable/ic_arrow_back"
+            android:layout_alignParentStart="true"
+            android:contentDescription="Back"
+            app:tint="#000" />
+
+        <ImageView
+            android:id="@+id/attachButton"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="8dp"
+            android:layout_alignParentEnd="true"
+            android:layout_marginEnd="56dp"
+            android:src="@drawable/ic_attachment"
+            android:contentDescription="Attach"
+            app:tint="#000" />
+
+        <ImageView
+            android:id="@+id/sendButton"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="8dp"
+            android:layout_alignParentEnd="true"
+            android:src="@drawable/ic_send"
+            android:contentDescription="Send"
+            app:tint="#000" />
+    </RelativeLayout>
+
+
+    <!-- Content -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#F8F6F9"
+        android:paddingHorizontal="16dp">
+
+        <LinearLayout
+            android:orientation="vertical"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="Recipient email"
-            android:inputType="textEmailAddress" />
+            android:paddingBottom="32dp">
 
-        <EditText
-            android:id="@+id/editSubject"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="Subject" />
+            <!-- To -->
+            <EditText
+                android:id="@+id/toField"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="To"
+                android:minHeight="60dp"
+                android:background="@null"
+                android:textColor="#000"
+                android:textSize="20sp"
+                android:inputType="textEmailAddress"
+                android:paddingVertical="16dp" />
 
-        <EditText
-            android:id="@+id/editContent"
-            android:layout_width="match_parent"
-            android:layout_height="200dp"
-            android:gravity="top"
-            android:hint="Write your message here"
-            android:inputType="textMultiLine" />
+            <!-- Subject -->
+            <EditText
+                android:id="@+id/subjectField"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Subject"
+                android:minHeight="60dp"
+                android:background="@null"
+                android:textColor="#000"
+                android:textSize="20sp"
+                android:paddingVertical="16dp" />
 
-        <Button
-            android:id="@+id/btnSend"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Send" />
-    </LinearLayout>
-</ScrollView>
+            <!-- Body -->
+            <EditText
+                android:id="@+id/bodyField"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:hint="Compose email"
+                android:background="@null"
+                android:textColor="#000"
+                android:textSize="20sp"
+                android:gravity="top"
+                android:inputType="textMultiLine"
+                android:minLines="12"
+                android:paddingVertical="16dp" />
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

@@ -1,9 +1,10 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. -->
-    <style name="Base.Theme.Gmailish" parent="Theme.Material3.DayNight.NoActionBar" >
-        <!-- Customize your light theme here. -->
-        <!-- <item name="colorPrimary">@color/my_light_primary</item> -->
+    <style name="Base.Theme.Gmailish" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Light status bar background -->
         <item name="android:statusBarColor">#FFFFFF</item>
+        <!-- Make battery/time icons black -->
+        <item name="android:windowLightStatusBar">true</item>
     </style>
 
     <style name="Theme.Gmailish" parent="Base.Theme.Gmailish" />
