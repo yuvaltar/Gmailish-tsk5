@@ -22,6 +22,15 @@ public class LoginActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_login);
 
+        // Redirect to register immediately when activity opens
+        Toast.makeText(this, "Redirecting to registration...", Toast.LENGTH_SHORT).show();
+        Intent intent = new Intent(this, RegisterActivity.class);
+        startActivity(intent);
+        finish(); // Close login activity
+
+        // The rest of the code below won't execute due to finish() above,
+        // but keeping it for when you want to restore normal login functionality
+
         EditText editEmail = findViewById(R.id.editEmail);
         EditText editPassword = findViewById(R.id.editPassword);
         Button btnLogin = findViewById(R.id.btnLogin);
@@ -40,8 +49,8 @@ public class LoginActivity extends AppCompatActivity {
             if (success) {
                 Toast.makeText(this, "Login successful!", Toast.LENGTH_SHORT).show();
                 // TODO: Replace InboxActivity with your real inbox screen
-                Intent intent = new Intent(this, InboxActivity.class);
-                startActivity(intent);
+                Intent intent2 = new Intent(this, InboxActivity.class);
+                startActivity(intent2);
                 finish();
             }
         });
@@ -51,8 +60,8 @@ public class LoginActivity extends AppCompatActivity {
         );
 
         textRegister.setOnClickListener(v -> {
-            Intent intent = new Intent(this, RegisterActivity.class);
-            startActivity(intent);
+            Intent intent3 = new Intent(this, RegisterActivity.class);
+            startActivity(intent3);
         });
     }
 }

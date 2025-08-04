@@ -87,7 +87,6 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
 
-
         <LinearLayout
             android:id="@+id/registration_root"
             android:layout_width="0dp"
@@ -115,16 +114,15 @@
                     android:id="@+id/logo"
                     android:layout_width="160dp"
                     android:layout_height="100dp"
+                    android:layout_marginBottom="8dp"
                     android:contentDescription="Company Logo"
                     android:scaleType="centerInside"
-                    android:src="@drawable/logo"
-                    android:layout_marginBottom="8dp" />
+                    android:src="@drawable/logo" />
 
-                <!-- Optional tagline or app name -->
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Create Your Account"
+                    android:text="Welcome to Your App"
                     android:textSize="16sp"
                     android:textColor="#666666"
                     android:fontFamily="sans-serif-medium" />
@@ -201,26 +199,44 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginBottom="32dp"
+                            android:fontFamily="sans-serif"
                             android:gravity="center"
-                            android:text="Join us today and get started"
-                            android:textSize="16sp"
+                            android:text="Join us today and get started on your journey"
                             android:textColor="#666666"
-                            android:fontFamily="sans-serif" />
+                            android:textSize="16sp" />
 
-                        <!-- ENHANCED START REGISTER BUTTON -->
+                        <!-- GET STARTED BUTTON (for new users) -->
                         <com.google.android.material.button.MaterialButton
-                            android:id="@+id/button_start_register"
+                            android:id="@+id/button_get_started"
                             android:layout_width="match_parent"
                             android:layout_height="56dp"
+                            android:layout_marginBottom="16dp"
                             android:backgroundTint="#4285F4"
+                            android:fontFamily="sans-serif-medium"
                             android:text="Get Started"
                             android:textColor="@android:color/white"
                             android:textSize="16sp"
                             android:textStyle="bold"
                             app:cornerRadius="16dp"
-                            app:strokeWidth="0dp"
+                            app:rippleColor="#ffffff33"
+                            app:strokeWidth="0dp" />
+
+                        <!-- LOGIN BUTTON (for existing users) -->
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/button_login"
+                            android:layout_width="match_parent"
+                            android:layout_height="56dp"
+                            android:backgroundTint="@android:color/transparent"
                             android:fontFamily="sans-serif-medium"
-                            app:rippleColor="#ffffff33" />
+                            android:text="Have an account? Login"
+                            android:textColor="#4285F4"
+                            android:textSize="14sp"
+                            android:textStyle="normal"
+                            app:cornerRadius="16dp"
+                            app:rippleColor="#4285F433"
+                            app:strokeColor="#4285F4"
+                            app:strokeWidth="2dp" />
+
                     </LinearLayout>
 
                     <!-- ENHANCED STEP 1: NAME INPUT SCREEN -->
@@ -384,8 +400,8 @@
 
                         <com.google.android.material.textfield.TextInputLayout
                             android:layout_width="match_parent"
-                            android:layout_height="50dp"
-                            android:layout_marginBottom="50dp"
+                            android:layout_height="80dp"
+                            android:layout_marginBottom="32dp"
                             android:hint="  Gender"
                             app:boxCornerRadiusTopStart="25dp"
                             app:boxCornerRadiusTopEnd="25dp"
@@ -404,7 +420,9 @@
                                 android:importantForAccessibility="no"
                                 android:inputType="none"
                                 android:textSize="16sp"
-                                android:fontFamily="sans-serif" />
+                                android:fontFamily="sans-serif"
+                                android:paddingTop="16dp"
+                                android:paddingBottom="16dp" />
                         </com.google.android.material.textfield.TextInputLayout>
 
                         <com.google.android.material.button.MaterialButton

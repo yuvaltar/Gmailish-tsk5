@@ -25,6 +25,7 @@ import androidx.lifecycle.ViewModelProvider;
 
 import com.example.gmailish.R;
 import com.example.gmailish.ui.login.LoginActivity;
+import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.MaterialAutoCompleteTextView;
 
 import java.io.File;
@@ -53,6 +54,10 @@ public class RegisterActivity extends AppCompatActivity {
     private ImageView imagePreview;
     private ImageView logo;
     private Button selectImageButton;
+
+    // Welcome block buttons
+    private MaterialButton buttonGetStarted;
+    private MaterialButton buttonLogin;
 
     // Back buttons
     private Button backToWelcome, backToStep1, backToStep2;
@@ -123,6 +128,10 @@ public class RegisterActivity extends AppCompatActivity {
         // Initialize logo ImageView (automatically handles day/night mode switching)
         logo = findViewById(R.id.logo);
 
+        // Initialize welcome block buttons
+        buttonGetStarted = findViewById(R.id.button_get_started);
+        buttonLogin = findViewById(R.id.button_login);
+
         // Initialize back buttons
         backToWelcome = findViewById(R.id.back_to_welcome);
         backToStep1 = findViewById(R.id.back_to_step1);
@@ -180,13 +189,12 @@ public class RegisterActivity extends AppCompatActivity {
     }
 
     private void setupButtonListeners() {
-        Button startRegister = findViewById(R.id.button_start_register);
         Button next1 = findViewById(R.id.next1);
         Button next2 = findViewById(R.id.next2);
         Button submitButton = findViewById(R.id.submitRegistration);
 
-        // Forward navigation buttons
-        startRegister.setOnClickListener(v -> {
+        // Welcome block buttons
+        buttonGetStarted.setOnClickListener(v -> {
             welcomeBlock.setVisibility(View.GONE);
             stepName.setVisibility(View.VISIBLE);
             progressSection.setVisibility(View.VISIBLE);
@@ -195,6 +203,13 @@ public class RegisterActivity extends AppCompatActivity {
             backToWelcome.setVisibility(View.VISIBLE);
 
             updateProgress(1, "Step 1 of 3");
+        });
+
+        buttonLogin.setOnClickListener(v -> {
+            // Go to login activity for existing users
+            Intent intent = new Intent(this, LoginActivity.class);
+            startActivity(intent);
+            finish(); // Close registration activity
         });
 
         selectImageButton.setOnClickListener(v -> {
