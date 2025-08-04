@@ -1,5 +1,6 @@
 # --- OS / Editor noise ---
 .DS_Store
+Thumbs.db
 *.swp
 *.tmp
 *.temp
@@ -25,6 +26,9 @@
 **/.cxx/
 .cxx/
 
+# Built application files
+*.apk
+
 # Local machine config (contains your SDK path)
 local.properties
 
@@ -39,6 +43,12 @@ captures/
 # Kotlin/Annotation processing
 .kotlinc/
 **/kotlin/**/build/
+
+# Google services config (API keys)
+google-services.json
+
+# Profiler output
+*.hprof
 
 # --- Android Studio / IntelliJ ---
 .idea/
@@ -57,48 +67,3 @@ release/
 # --- Keep Gradle wrapper (DO NOT ignore these) ---
 # gradlew, gradlew.bat, and gradle/wrapper/* must stay tracked.
 # (Nothing to ignore here; this comment is just a reminder.)
-NUL
-CON
-PRN
-AUX
-
-# Built application files
-*.apk
-
-# Gradle and build directories
-.gradle/
-build/
-
-# Local configuration file (never commit this!)
-local.properties
-
-# Log files
-*.log
-
-# Captures and screenshots
-captures/
-
-# External build outputs
-.externalNativeBuild/
-
-# IntelliJ IDE files
-.idea/
-*.iml
-
-# Keystore files
-*.jks
-*.keystore
-
-# Google services config (API keys)
-google-services.json
-
-# Profiler output
-*.hprof
-
-# Temporary files and swap files
-*.tmp
-*.swp
-
-# OS files
-.DS_Store
-Thumbs.db
