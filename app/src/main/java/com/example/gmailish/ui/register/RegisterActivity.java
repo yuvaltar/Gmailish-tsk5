@@ -1,4 +1,3 @@
-//registerActivity
 package com.example.gmailish.ui.register;
 
 import android.annotation.SuppressLint;

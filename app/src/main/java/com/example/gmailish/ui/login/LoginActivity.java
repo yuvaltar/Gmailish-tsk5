@@ -22,14 +22,7 @@ public class LoginActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_login);
 
-        // Redirect to register immediately when activity opens
-        Toast.makeText(this, "Redirecting to registration...", Toast.LENGTH_SHORT).show();
-        Intent intent = new Intent(this, RegisterActivity.class);
-        startActivity(intent);
-        finish(); // Close login activity
-
-        // The rest of the code below won't execute due to finish() above,
-        // but keeping it for when you want to restore normal login functionality
+        // Removed the immediate redirect to RegisterActivity
 
         EditText editEmail = findViewById(R.id.editEmail);
         EditText editPassword = findViewById(R.id.editPassword);

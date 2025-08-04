@@ -15,8 +15,9 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/Theme.Gmailish">
 
-        <activity android:name=".ui.register.RegisterActivity" />
-        <activity android:name=".ui.login.LoginActivity"
+        <!-- RegisterActivity is now the launcher (first) activity -->
+        <activity
+            android:name=".ui.register.RegisterActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
@@ -24,9 +25,10 @@
             </intent-filter>
         </activity>
 
+        <activity android:name=".ui.login.LoginActivity" />
+
         <activity android:name=".ui.inbox.InboxActivity" />
-        <activity android:name=".ui.compose.ComposeActivity" /> <!-- ✅ ADDED -->
+        <activity android:name=".ui.compose.ComposeActivity" />
 
     </application>
-
 </manifest>
