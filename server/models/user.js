@@ -12,7 +12,7 @@ const userSchema = new mongoose.Schema({
   gender:    { type: String, required: true },
   password:  { type: String, required: true },
   birthdate: { type: Date,   required: true },
-  picture:   { type: String, required: true }, // filename from Multer
+  picture:   { type: String, required: false, default: null }, // filename from Multer
 });
 
 const User = mongoose.model('User', userSchema);

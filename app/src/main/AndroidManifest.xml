@@ -34,6 +34,8 @@
 
         <activity android:name=".ui.inbox.InboxActivity" />
         <activity android:name=".ui.compose.ComposeActivity" />
+        <activity android:name=".mail.MailViewActivity" />
+
 
     </application>
 </manifest>

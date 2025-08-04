@@ -2,6 +2,8 @@ package com.example.gmailish.ui.inbox;
 
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
@@ -33,10 +35,14 @@ import com.example.gmailish.model.Email;
 import com.example.gmailish.ui.compose.ComposeActivity;
 import com.google.android.material.navigation.NavigationView;
 
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.IOException;
+
+import java.io.InputStream;
+import java.net.URL;
 import java.util.List;
 
 import okhttp3.Call;
@@ -53,6 +59,9 @@ public class InboxActivity extends AppCompatActivity {
     private Button composeButton;
     private DrawerLayout drawerLayout;
     private ActionBarDrawerToggle toggle;
+    private ImageView avatarImageView;
+    private TextView avatarLetterTextView;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -162,11 +171,40 @@ public class InboxActivity extends AppCompatActivity {
             }
         });
 
+        viewModel.getCurrentUserLiveData().observe(this, user -> {
+            if (user != null) {
+                if (user.getPicture() != null && !user.getPicture().isEmpty()) {
+                    new Thread(() -> {
+                        try {
+                            URL url = new URL("http://10.0.2.2:3000/api/users/" + user.getId() + "/picture");
+                            InputStream in = url.openStream();
+                            Bitmap bitmap = BitmapFactory.decodeStream(in);
+                            runOnUiThread(() -> {
+                                avatarImageView.setImageBitmap(bitmap);
+                                avatarImageView.setVisibility(View.VISIBLE);
+                                avatarLetterTextView.setVisibility(View.GONE);
+                            });
+                        } catch (IOException e) {
+                            Log.e("Avatar", "Failed to load picture: " + e.getMessage());
+                        }
+                    }).start();
+                } else {
+                    avatarImageView.setVisibility(View.GONE);
+                    avatarLetterTextView.setVisibility(View.VISIBLE);
+                    avatarLetterTextView.setText(user.getUsername().substring(0, 1).toUpperCase());
+                }
+            }
+        });
+
+
         SharedPreferences prefs = getSharedPreferences("prefs", MODE_PRIVATE);
         String token = prefs.getString("jwt", null);
-        Log.d("JWT", "Loaded token: " + token);
+        avatarImageView = findViewById(R.id.avatarImageView);
+        avatarLetterTextView = findViewById(R.id.avatarLetterTextView);
         if (token != null) {
             viewModel.loadEmails(token);
+            viewModel.loadCurrentUser();
+
         } else {
             Toast.makeText(this, "JWT missing!", Toast.LENGTH_SHORT).show();
         }

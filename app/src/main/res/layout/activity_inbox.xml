@@ -54,17 +54,31 @@
                 android:importantForAutofill="no" />
 
 
-            <TextView
-                android:id="@+id/userInitial"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:layout_marginStart="12dp"
-                android:background="@drawable/circle_background"
-                android:gravity="center"
-                android:text="@string/user_initial_y"
-                android:textColor="#FFFFFF"
-                android:textSize="16sp"
-                android:textStyle="bold" />
+            <FrameLayout
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_gravity="end">
+
+                <!-- Actual image if exists -->
+                <ImageView
+                    android:id="@+id/avatarImageView"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:scaleType="centerCrop"
+                    android:background="@drawable/circle_background"
+                    android:visibility="gone" />
+
+                <!-- Fallback letter in circle -->
+                <TextView
+                    android:id="@+id/avatarLetterTextView"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:textColor="@android:color/white"
+                    android:textSize="18sp"
+                    android:background="@drawable/circle_background"
+                    android:visibility="gone" />
+            </FrameLayout>
 
         </LinearLayout>
 

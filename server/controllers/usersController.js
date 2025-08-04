@@ -21,8 +21,8 @@ exports.registerUser = async (req, res) => {
   const { firstName, lastName, username, gender, password, birthdate } = req.body;
   const picture = req.file;
 
-  if (!firstName || !lastName || !username || !gender || !password || !birthdate || !picture) {
-    return res.status(400).json({ error: 'All fields are required' });
+  if (!firstName || !lastName || !username || !gender || !password || !birthdate) {
+    return res.status(400).json({ error: 'All fields except picture are required' });
   }
 
   if (!isValidDate(birthdate)) {
@@ -49,14 +49,13 @@ exports.registerUser = async (req, res) => {
       gender,
       password,
       birthdate,
-      picture: picture.filename,
+      picture: picture ? picture.filename : null,  // Optional
     });
 
     if (!newUser) {
       return res.status(409).json({ error: 'Username already exists' });
     }
 
-    console.log('Created user:', newUser);
     res.status(201).json({
       id: newUser.id,
       username: newUser.username,
@@ -68,6 +67,7 @@ exports.registerUser = async (req, res) => {
     res.status(500).json({ error: 'User creation failed' });
   }
 };
+
 
 // GET /api/users/:id
 exports.getUser = async (req, res) => {
