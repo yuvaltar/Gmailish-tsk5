@@ -3,33 +3,33 @@
 
     <!-- TOP SECTION -->
     <group android:checkableBehavior="single">
+
         <item
             android:id="@+id/nav_all_inboxes"
             android:title="All inboxes"
             android:icon="@drawable/ic_all_inbox" />
 
-        <!-- divider under All inboxes -->
-        <item
-            android:id="@+id/divider_all_inboxes"
-            android:enabled="false"
-            android:checkable="false"
-            android:actionLayout="@layout/menu_divider" />
+        <!-- Thin divider under All inboxes -->
+
 
         <item
             android:id="@+id/nav_primary"
             android:title="Primary"
             android:icon="@drawable/ic_inbox"
             android:actionLayout="@layout/menu_badge" />
+
         <item
             android:id="@+id/nav_promotions"
             android:title="Promotions"
             android:icon="@drawable/ic_label"
             android:actionLayout="@layout/menu_badge" />
+
         <item
             android:id="@+id/nav_social"
             android:title="Social"
             android:icon="@drawable/ic_social"
             android:actionLayout="@layout/menu_badge" />
+
         <item
             android:id="@+id/nav_updates"
             android:title="Updates"
@@ -40,21 +40,20 @@
     <item android:title="All labels" />
 
     <group android:checkableBehavior="single">
-        <item android:id="@+id/nav_starred"   android:title="Starred"   android:icon="@drawable/ic_star"/>
-        <!-- Use your filename: ic_importent (or ic_important if that’s what you created) -->
-        <item android:id="@+id/nav_important" android:title="Important" android:icon="@drawable/ic_importent"/>
-        <item android:id="@+id/nav_sent"      android:title="Sent"      android:icon="@drawable/ic_send"/>
-        <item android:id="@+id/nav_drafts"    android:title="Drafts"    android:icon="@drawable/ic_draft"/>
-        <item android:id="@+id/nav_all_mail"  android:title="All mail"  android:icon="@drawable/ic_all_mails"/>
-        <item android:id="@+id/nav_spam"      android:title="Spam"      android:icon="@drawable/ic_spam"/>
-        <item android:id="@+id/nav_trash"     android:title="Trash"     android:icon="@drawable/ic_delete"/>
+        <item android:id="@+id/nav_starred"   android:title="Starred"   android:icon="@drawable/ic_star" />
+        <item android:id="@+id/nav_important" android:title="Important" android:icon="@drawable/ic_importent" />
+        <item android:id="@+id/nav_sent"      android:title="Sent"      android:icon="@drawable/ic_send" />
+        <item android:id="@+id/nav_drafts"    android:title="Drafts"    android:icon="@drawable/ic_draft" />
+        <item android:id="@+id/nav_all_mail"  android:title="All mail"  android:icon="@drawable/ic_all_mails" />
+        <item android:id="@+id/nav_spam"      android:title="Spam"      android:icon="@drawable/ic_spam" />
+        <item android:id="@+id/nav_trash"     android:title="Trash"     android:icon="@drawable/ic_delete" />
     </group>
 
     <group>
-        <item android:id="@+id/nav_calendar"  android:title="Calendar"         android:icon="@drawable/ic_calendar"/>
-        <item android:id="@+id/nav_contacts"  android:title="Contacts"         android:icon="@drawable/ic_label"/>
-        <item android:id="@+id/nav_settings"  android:title="Settings"         android:icon="@drawable/ic_settings"/>
-        <item android:id="@+id/nav_help"      android:title="Help &amp; feedback" android:icon="@drawable/ic_help_feedback"/>
+        <item android:id="@+id/nav_calendar"  android:title="Calendar"          android:icon="@drawable/ic_calendar" />
+        <item android:id="@+id/nav_contacts"  android:title="Contacts"          android:icon="@drawable/ic_label" />
+        <item android:id="@+id/nav_settings"  android:title="Settings"          android:icon="@drawable/ic_settings" />
+        <item android:id="@+id/nav_help"      android:title="Help &amp; feedback" android:icon="@drawable/ic_help_feedback" />
     </group>
 
 </menu>

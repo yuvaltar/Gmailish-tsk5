@@ -1,8 +1,12 @@
 package com.example.gmailish.ui.inbox;
 
+import android.app.Application;
+import android.content.Context;
+import android.content.SharedPreferences;
+
+import androidx.lifecycle.AndroidViewModel;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
-import androidx.lifecycle.ViewModel;
 
 import com.example.gmailish.model.Email;
 
@@ -18,12 +22,17 @@ import okhttp3.Callback;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
+import android.util.Log;
 
-public class InboxViewModel extends ViewModel {
+public class InboxViewModel extends AndroidViewModel {
 
     private final MutableLiveData<List<Email>> emailsLiveData = new MutableLiveData<>();
     private final MutableLiveData<String> errorLiveData = new MutableLiveData<>();
     private final OkHttpClient client = new OkHttpClient();
+
+    public InboxViewModel(Application application) {
+        super(application);
+    }
 
     public LiveData<List<Email>> getEmails() {
         return emailsLiveData;
@@ -64,30 +73,55 @@ public class InboxViewModel extends ViewModel {
         errorLiveData.setValue(null);
 
         Request request = new Request.Builder()
-                .url("http://10.0.2.2:3000/api/mails/search?query=" + query)
-                .header("Authorization", "Bearer " + getJwtToken()) // Optional: handle JWT more cleanly
+                .url("http://10.0.2.2:3000/api/mails/search/" + query)
+                .header("Authorization", "Bearer " + getJwtToken())
                 .build();
 
         client.newCall(request).enqueue(new Callback() {
             @Override
             public void onFailure(Call call, IOException e) {
+                Log.e("SearchError", "Network error: " + e.getMessage());
                 errorLiveData.postValue("Search error: " + e.getMessage());
             }
 
             @Override
             public void onResponse(Call call, Response response) throws IOException {
                 if (!response.isSuccessful()) {
+                    Log.e("SearchError", "Search failed: " + response.code());
                     errorLiveData.postValue("Search failed: " + response.code());
                     return;
                 }
 
-                List<Email> parsedEmails = parseEmailList(response);
-                if (parsedEmails != null) {
+                String jsonStr = response.body().string();
+                Log.d("SearchRaw", jsonStr);
+
+                try {
+                    JSONArray jsonArray = new JSONArray(jsonStr);
+                    List<Email> parsedEmails = new ArrayList<>();
+
+                    for (int i = 0; i < jsonArray.length(); i++) {
+                        JSONObject obj = jsonArray.getJSONObject(i);
+                        parsedEmails.add(new Email(
+                                obj.optString("senderName"),
+                                obj.optString("subject"),
+                                obj.optString("content"),
+                                obj.optString("timestamp"),
+                                obj.optBoolean("read"),
+                                obj.optBoolean("starred")
+                        ));
+                    }
+
+                    Log.d("SearchResult", "Parsed emails: " + parsedEmails.size());
                     emailsLiveData.postValue(parsedEmails);
+
+                } catch (Exception e) {
+                    Log.e("SearchError", "JSON parse error: " + e.getMessage());
+                    errorLiveData.postValue("JSON parse error: " + e.getMessage());
                 }
             }
         });
     }
+
 
     private List<Email> parseEmailList(Response response) throws IOException {
         try {
@@ -113,8 +147,9 @@ public class InboxViewModel extends ViewModel {
         }
     }
 
-    // Optional helper if you want to fetch JWT internally (instead of passing it into searchEmails)
     private String getJwtToken() {
-        return ""; // implement this if needed (via Application context + SharedPreferences)
+        SharedPreferences prefs = getApplication()
+                .getSharedPreferences("prefs", Context.MODE_PRIVATE);
+        return prefs.getString("jwt", null);
     }
 }
