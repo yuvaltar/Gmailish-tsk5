@@ -12,14 +12,21 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.example.gmailish.R;
 import com.example.gmailish.model.Email;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class EmailAdapter extends RecyclerView.Adapter<EmailAdapter.EmailViewHolder> {
 
     private final List<Email> emailList;
 
-    public EmailAdapter(List<Email> emails) {
-        this.emailList = emails;
+    public EmailAdapter() {
+        this.emailList = new ArrayList<>();
+    }
+
+    public void updateData(List<Email> newEmails) {
+        emailList.clear();
+        emailList.addAll(newEmails);
+        notifyDataSetChanged();
     }
 
     public static class EmailViewHolder extends RecyclerView.ViewHolder {
@@ -55,11 +62,7 @@ public class EmailAdapter extends RecyclerView.Adapter<EmailAdapter.EmailViewHol
         holder.timestamp.setText(email.timestamp);
         holder.senderIcon.setText(email.senderName.substring(0, 1).toUpperCase());
 
-        if (email.read) {
-            holder.itemView.setAlpha(0.6f);
-        } else {
-            holder.itemView.setAlpha(1.0f);
-        }
+        holder.itemView.setAlpha(email.read ? 0.6f : 1.0f);
 
         holder.starIcon.setImageResource(email.starred ?
                 android.R.drawable.btn_star_big_on :

@@ -19,6 +19,8 @@ import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.ActionBarDrawerToggle;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.GravityCompat;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -51,7 +53,6 @@ public class InboxActivity extends AppCompatActivity {
 
         drawerLayout = findViewById(R.id.drawerLayout);
         ImageView hamburgerIcon = findViewById(R.id.hamburgerIcon);
-
         toggle = new ActionBarDrawerToggle(this, drawerLayout, R.string.open, R.string.close);
         drawerLayout.addDrawerListener(toggle);
         toggle.syncState();
@@ -59,7 +60,8 @@ public class InboxActivity extends AppCompatActivity {
         hamburgerIcon.setOnClickListener(v -> drawerLayout.openDrawer(GravityCompat.START));
 
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
-            @Override public void handleOnBackPressed() {
+            @Override
+            public void handleOnBackPressed() {
                 if (drawerLayout.isDrawerOpen(GravityCompat.START)) {
                     drawerLayout.closeDrawer(GravityCompat.START);
                 } else {
@@ -70,59 +72,31 @@ public class InboxActivity extends AppCompatActivity {
         });
 
         NavigationView navigationView = findViewById(R.id.navigationView);
+        View header = navigationView.getHeaderView(0);
+        ViewCompat.setOnApplyWindowInsetsListener(header, (v, insets) -> {
+            int top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top;
+            v.setPadding(v.getPaddingLeft(), top + dp(24), v.getPaddingRight(), v.getPaddingBottom());
+            return insets;
+        });
 
         navigationView.setNavigationItemSelectedListener(menuItem -> {
-            int id = menuItem.getItemId();
-
-            if (id == R.id.nav_primary) {
-                Log.d("Nav","Primary");
-            } else if (id == R.id.nav_promotions) {
-                Log.d("Nav","Promotions");
-            } else if (id == R.id.nav_social) {
-                Log.d("Nav","Social");
-            } else if (id == R.id.nav_updates) {
-                Log.d("Nav","Updates");
-            } else if (id == R.id.nav_starred) {
-                Log.d("Nav","Starred");
-            } else if (id == R.id.nav_important) {
-                Log.d("Nav","Important");
-            } else if (id == R.id.nav_sent) {
-                Log.d("Nav","Sent");
-            } else if (id == R.id.nav_drafts) {
-                Log.d("Nav","Drafts");
-            } else if (id == R.id.nav_all_mail) {
-                Log.d("Nav","All mail");
-            } else if (id == R.id.nav_spam) {
-                Log.d("Nav","Spam");
-            } else if (id == R.id.nav_trash) {
-                Log.d("Nav","Trash");
-            } else if (id == R.id.nav_calendar) {
-                Log.d("Nav","Calendar");
-            } else if (id == R.id.nav_contacts) {
-                Log.d("Nav","Contacts");
-            } else if (id == R.id.nav_settings) {
-                Log.d("Nav","Settings");
-            } else if (id == R.id.nav_help) {
-                Log.d("Nav","Help & feedback");
-            }
-
+            Log.d("Nav", "Selected: " + menuItem.getTitle());
             menuItem.setChecked(true);
             drawerLayout.closeDrawer(GravityCompat.START);
             return true;
         });
 
-        // Default selected item (pill highlight)
         navigationView.setCheckedItem(R.id.nav_primary);
-
-        // Right-side badges (items with actionLayout="@layout/menu_badge")
         Menu menu = navigationView.getMenu();
-        setBadge(menu.findItem(R.id.nav_primary),    "99+");
+        setBadge(menu.findItem(R.id.nav_primary), "99+");
         setBadge(menu.findItem(R.id.nav_promotions), "26 new", 0xFFBFE6C8);
-        setBadge(menu.findItem(R.id.nav_social),     "27 new", 0xFFD5E4FF);
-        setBadge(menu.findItem(R.id.nav_updates),    "82 new", 0xFFFFE2CC);
+        setBadge(menu.findItem(R.id.nav_social), "27 new", 0xFFD5E4FF);
+        setBadge(menu.findItem(R.id.nav_updates), "82 new", 0xFFFFE2CC);
 
         recyclerView = findViewById(R.id.inboxRecyclerView);
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
+        adapter = new EmailAdapter();
+        recyclerView.setAdapter(adapter);
 
         composeButton = findViewById(R.id.composeButton);
         composeButton.setOnClickListener(v ->
@@ -130,6 +104,7 @@ public class InboxActivity extends AppCompatActivity {
 
         EditText searchBar = findViewById(R.id.searchBar);
         searchBar.setOnEditorActionListener((v, actionId, event) -> {
+            Log.d("Search", "Search triggered with actionId=" + actionId);
             if (actionId == EditorInfo.IME_ACTION_SEARCH || actionId == EditorInfo.IME_NULL) {
                 String query = v.getText().toString().trim();
                 if (!query.isEmpty()) {
@@ -141,9 +116,12 @@ public class InboxActivity extends AppCompatActivity {
         });
 
         viewModel = new ViewModelProvider(this).get(InboxViewModel.class);
-        viewModel.getEmails().observe(this, this::displayEmails);
-        viewModel.getError().observe(this, msg ->
-                Toast.makeText(this, msg, Toast.LENGTH_LONG).show());
+        viewModel.getEmails().observe(this, adapter::updateData);
+        viewModel.getError().observe(this, msg -> {
+            if (msg != null && !msg.isEmpty()) {
+                Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
+            }
+        });
 
         SharedPreferences prefs = getSharedPreferences("prefs", MODE_PRIVATE);
         String token = prefs.getString("jwt", null);
@@ -155,24 +133,22 @@ public class InboxActivity extends AppCompatActivity {
         }
     }
 
-    private void displayEmails(List<Email> emails) {
-        adapter = new EmailAdapter(emails);
-        recyclerView.setAdapter(adapter);
-    }
-
-    // Badge helpers
     private void setBadge(MenuItem item, String text) {
         setBadge(item, text, 0xFFE6EDF6);
     }
 
     private void setBadge(MenuItem item, String text, int bgColor) {
         if (item == null) return;
-        View v = item.getActionView(); // requires android:actionLayout="@layout/menu_badge"
+        View v = item.getActionView();
         if (v instanceof TextView) {
             TextView tv = (TextView) v;
             tv.setText(text);
             tv.getBackground().setTint(bgColor);
             tv.setVisibility(View.VISIBLE);
         }
+    }
+
+    private int dp(int v) {
+        return Math.round(getResources().getDisplayMetrics().density * v);
     }
 }

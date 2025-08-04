@@ -9,7 +9,7 @@ const uuidv4 = require('../utils/uuid');
  * Create both an inbox copy and a sent copy of a mail.
  * Throws if sender or recipient cannot be found.
  */
-async function createMail(senderId, recipientId, subject, content, recipientLabels = ['inbox']) {
+async function createMail(senderId, recipientEmail, subject, content, recipientLabels = ['inbox']) {
   // Validate sender
   const sender = await User.findOne({ id: senderId }).lean();
   if (!sender) {
@@ -17,7 +17,7 @@ async function createMail(senderId, recipientId, subject, content, recipientLabe
   }
 
   // Validate recipient
-  const recipient = await User.findOne({ id: recipientId }).lean();
+  const recipient = await User.findOne({ email: new RegExp(`^${recipientEmail}$`, 'i') }).lean();
   if (!recipient) {
     throw new Error('Recipient not found');
   }
@@ -28,14 +28,14 @@ async function createMail(senderId, recipientId, subject, content, recipientLabe
     id:             uuidv4(),
     senderId,
     senderName:     `${sender.firstName} ${sender.lastName}`,
-    recipientId,
+    recipientId:    recipient.id,
     recipientName:  `${recipient.firstName} ${recipient.lastName}`,
     recipientEmail: recipient.email,
     subject,
     content,
     timestamp,
     labels:         recipientLabels,
-    ownerId:        recipientId,
+    ownerId:        recipient.id,
     read:           false
   };
 
