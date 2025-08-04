@@ -2,10 +2,19 @@
     <string name="app_name">Gmailish</string>
     <string name="welcome">Welcome to Gmailish!\nLet\'s get started.</string>
     <string-array name="gender_array">
+
         <item>Male</item>
         <item>Female</item>
         <item>Other</item>
     </string-array>
+    <string name="open">Open navigation drawer</string>
+    <string name="close">Close navigation drawer</string>
+    <string name="open_navigation">Open navigation drawer</string>
+    <string name="search_in_mail">Search in mail</string>
+    <string name="user_initial_y">Y</string>
+    <string name="compose">Compose</string>
+    <string name="all_inboxes">All inboxes</string>
+
 
 
 </resources>
