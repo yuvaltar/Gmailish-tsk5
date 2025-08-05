@@ -246,24 +246,50 @@ exports.searchMailsByLabel = async (req, res) => {
 /**
  * Add a custom label to a mail.
  */
+/**
+ * Add a custom label to a mail (with optional 'add' or 'remove' action).
+ * Normalizes "inbox" to "primary" for consistency.
+ */
 exports.addLabelToEmail = async (req, res) => {
   try {
-    const { label } = req.body;
+    let { label, action } = req.body;
+    const resolvedAction = action || 'add';
+
     if (!label || typeof label !== 'string' || !label.trim()) {
       return res.status(400).json({ error: 'Label must be a non-empty string' });
     }
+
+    // Normalize 'inbox' to 'primary'
+    label = label.trim().toLowerCase() === 'inbox' ? 'primary' : label.trim();
+
     const mail = await Mail.findOne({ id: req.params.id, ownerId: req.user.id });
     if (!mail) {
       return res.status(404).json({ error: 'Mail not found or not owned by you' });
     }
-    if (!mail.labels.includes(label)) mail.labels.push(label);
+
+    if (resolvedAction === 'add') {
+      if (!mail.labels.includes(label)) {
+        mail.labels.push(label);
+      }
+    } else if (resolvedAction === 'remove') {
+      mail.labels = mail.labels.filter(l => l !== label);
+    } else {
+      return res.status(400).json({ error: `Invalid action '${resolvedAction}'` });
+    }
+
     await mail.save();
-    return res.status(200).json({ message: `Label '${label}' added`, mail: mail.toObject() });
+    return res.status(200).json({
+      message: `Label '${label}' ${resolvedAction}ed`,
+      mail: mail.toObject()
+    });
   } catch (err) {
     console.error('addLabelToEmail error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
+
+
+
 
 /**
  * Remove a label from a mail.
