@@ -17,6 +17,7 @@ import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.example.gmailish.ui.HeaderManager;
 import com.example.gmailish.ui.inbox.CreateLabelActivity;
 
 import androidx.activity.OnBackPressedCallback;
@@ -67,6 +68,9 @@ public class InboxActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_inbox);
+
+        avatarImageView = findViewById(R.id.avatarImageView);
+        avatarLetterTextView = findViewById(R.id.avatarLetterTextView);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
@@ -171,39 +175,19 @@ public class InboxActivity extends AppCompatActivity {
             }
         });
 
-        viewModel.getCurrentUserLiveData().observe(this, user -> {
-            if (user != null) {
-                if (user.getPicture() != null && !user.getPicture().isEmpty()) {
-                    new Thread(() -> {
-                        try {
-                            URL url = new URL("http://10.0.2.2:3000/api/users/" + user.getId() + "/picture");
-                            InputStream in = url.openStream();
-                            Bitmap bitmap = BitmapFactory.decodeStream(in);
-                            runOnUiThread(() -> {
-                                avatarImageView.setImageBitmap(bitmap);
-                                avatarImageView.setVisibility(View.VISIBLE);
-                                avatarLetterTextView.setVisibility(View.GONE);
-                            });
-                        } catch (IOException e) {
-                            Log.e("Avatar", "Failed to load picture: " + e.getMessage());
-                        }
-                    }).start();
-                } else {
-                    avatarImageView.setVisibility(View.GONE);
-                    avatarLetterTextView.setVisibility(View.VISIBLE);
-                    avatarLetterTextView.setText(user.getUsername().substring(0, 1).toUpperCase());
-                }
-            }
-        });
-
+        HeaderManager.setup(
+                this,
+                viewModel,
+                avatarImageView,
+                avatarLetterTextView
+        );
 
         SharedPreferences prefs = getSharedPreferences("prefs", MODE_PRIVATE);
         String token = prefs.getString("jwt", null);
-        avatarImageView = findViewById(R.id.avatarImageView);
-        avatarLetterTextView = findViewById(R.id.avatarLetterTextView);
+
         if (token != null) {
             viewModel.loadEmails(token);
-            viewModel.loadCurrentUser();
+            viewModel.loadCurrentUser(token);
 
         } else {
             Toast.makeText(this, "JWT missing!", Toast.LENGTH_SHORT).show();
