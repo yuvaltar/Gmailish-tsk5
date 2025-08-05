@@ -50,9 +50,7 @@ public class InboxViewModel extends AndroidViewModel {
         return currentUserLiveData;
     }
 
-    public void loadCurrentUser() {
-        String token = getJwtToken();
-        if (token == null) return;
+    public void loadCurrentUser(String token) {
 
         Request request = new Request.Builder()
                 .url("http://10.0.2.2:3000/api/users/me")

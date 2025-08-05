@@ -114,3 +114,20 @@ exports.getUserPicture = async (req, res) => {
     res.status(500).json({ error: "Error loading picture" });
   }
 };
+
+//GET/api/users/me
+exports.getCurrentUser = async (req, res) => {
+    try {
+    const user = req.user;
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    // only send the bits your client needs
+    return res.json({
+      id:       user.id,
+      username: user.username,
+      picture:  user.picture || ''
+    });
+  } catch (err) {
+   console.error(err);
+   res.status(500).json({ error: 'Error fetching current user' });
+ }
+};

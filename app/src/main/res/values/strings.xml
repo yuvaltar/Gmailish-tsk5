@@ -14,7 +14,7 @@
     <string name="user_initial_y">Y</string>
     <string name="compose">Compose</string>
     <string name="all_inboxes">All inboxes</string>
-
+    <string name="logout">logout</string>
 
 
 </resources>
