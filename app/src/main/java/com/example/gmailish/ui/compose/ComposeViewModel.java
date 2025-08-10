@@ -2,17 +2,15 @@ package com.example.gmailish.ui.compose;
 
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
-
 import org.json.JSONObject;
-
 import java.io.IOException;
-
 import okhttp3.*;
 
 public class ComposeViewModel extends ViewModel {
 
+
     public MutableLiveData<String> message = new MutableLiveData<>();
-    public MutableLiveData<Boolean> sendSuccess = new MutableLiveData<>();
+    public MutableLiveData<String> sendSuccess = new MutableLiveData<>();
 
     private final OkHttpClient client = new OkHttpClient();
     private static final MediaType JSON = MediaType.parse("application/json");
@@ -22,7 +20,6 @@ public class ComposeViewModel extends ViewModel {
             message.setValue("Please fill all fields");
             return;
         }
-
         if (token == null || token.isEmpty()) {
             message.setValue("Missing authentication token");
             return;
@@ -48,24 +45,48 @@ public class ComposeViewModel extends ViewModel {
                 .build();
 
         client.newCall(request).enqueue(new Callback() {
-            @Override
-            public void onFailure(Call call, IOException e) {
+            @Override public void onFailure(Call call, IOException e) {
                 message.postValue("Network error: " + e.getMessage());
             }
 
-            @Override
-            public void onResponse(Call call, Response response) throws IOException {
-                String errorMsg = "Unknown error";
+            @Override public void onResponse(Call call, Response response) throws IOException {
                 if (!response.isSuccessful()) {
+                    String errorMsg = "Unknown error";
                     if (response.body() != null) {
                         errorMsg = response.body().string();
                     }
                     message.postValue("Failed to send: " + response.code() + "\n" + errorMsg);
                 } else {
-                    sendSuccess.postValue(true);
+                    String serverId = null;
+                    try {
+                        String bodyStr = response.body() != null ? response.body().string() : null;
+                        if (bodyStr != null && !bodyStr.isEmpty()) {
+                            JSONObject obj = new JSONObject(bodyStr);
+                            serverId = obj.optString("id", null);
+                        }
+                    } catch (Exception ignored) {}
+
+                    try {
+                        JSONObject emitted = new JSONObject();
+                        emitted.put("id", serverId != null ? serverId : "");
+                        emitted.put("to", to);
+                        emitted.put("subject", subject);
+                        emitted.put("content", content);
+                        sendSuccess.postValue(emitted.toString());
+                    } catch (Exception e) {
+                        try {
+                            JSONObject emitted = new JSONObject();
+                            emitted.put("id", "");
+                            emitted.put("to", to);
+                            emitted.put("subject", subject);
+                            emitted.put("content", content);
+                            sendSuccess.postValue(emitted.toString());
+                        } catch (Exception ignored2) {
+                            sendSuccess.postValue("{\"to\":\"" + to + "\"}");
+                        }
+                    }
                 }
             }
-
         });
     }
 }
