@@ -16,13 +16,13 @@ import com.example.gmailish.R;
 import org.json.JSONArray;
 
 import java.text.SimpleDateFormat;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
 public class MailViewActivity extends AppCompatActivity {
+
 
     private TextView senderText, recipientText, subjectText, contentText, timestampText, senderIcon;
     private ImageButton replyButton, forwardButton, starButton, deleteButton, archiveButton, menuButton, backButton;
@@ -54,8 +54,9 @@ public class MailViewActivity extends AppCompatActivity {
         menuButton = findViewById(R.id.menuButton);
         backButton = findViewById(R.id.backButton);
 
-
         viewModel = new ViewModelProvider(this).get(MailViewModel.class);
+        // initialize ViewModel with application context so it can access Room
+        viewModel.init(getApplicationContext());
 
         SharedPreferences prefs = getSharedPreferences("prefs", MODE_PRIVATE);
         jwtToken = prefs.getString("jwt", null);
@@ -70,9 +71,7 @@ public class MailViewActivity extends AppCompatActivity {
 
                 String rawTime = mail.optString("timestamp");
                 try {
-                    Instant instant = Instant.parse(rawTime);
-                    Date date = Date.from(instant);
-                    String formatted = new SimpleDateFormat("MMM d", Locale.getDefault()).format(date);
+                    String formatted = formatIso8601ToMonthDay(rawTime);
                     timestampText.setText(formatted);
                 } catch (Exception e) {
                     timestampText.setText(rawTime);
@@ -84,7 +83,7 @@ public class MailViewActivity extends AppCompatActivity {
                 }
 
                 currentLabels = mail.optJSONArray("labels");
-                isStarred = currentLabels.toString().contains("starred");
+                isStarred = currentLabels != null && currentLabels.toString().contains("starred");
                 updateStarIcon();
             }
         });
@@ -102,22 +101,29 @@ public class MailViewActivity extends AppCompatActivity {
 
         starButton.setOnClickListener(v -> {
             boolean willBeStarred = !isStarred;
-            viewModel.addOrRemoveLabel(mailId, "starred", jwtToken, willBeStarred);
+            // supply context so VM can update Room
+            viewModel.addOrRemoveLabel(mailId, "starred", jwtToken, willBeStarred, getApplicationContext());
             isStarred = willBeStarred;
             updateStarIcon();
         });
 
         deleteButton.setOnClickListener(v -> {
-            removeAllInboxLabels(() -> {
-                viewModel.addLabel(mailId, "trash", jwtToken);
-                Toast.makeText(this, "Moved to Trash", Toast.LENGTH_SHORT).show();
-                finish();
-            });
+            // Hard delete
+            viewModel.deleteMail(mailId, jwtToken, getApplicationContext());
+            Toast.makeText(this, "Deleted", Toast.LENGTH_SHORT).show();
+            finish();
+
+            // If you prefer “move to trash”, replace with:
+            // removeAllInboxLabels(() -> {
+            //     viewModel.addLabel(mailId, "trash", jwtToken, getApplicationContext());
+            //     Toast.makeText(this, "Moved to Trash", Toast.LENGTH_SHORT).show();
+            //     finish();
+            // });
         });
 
         archiveButton.setOnClickListener(v -> {
             removeAllInboxLabels(() -> {
-                viewModel.addLabel(mailId, "archive", jwtToken);
+                viewModel.addLabel(mailId, "archive", jwtToken, getApplicationContext());
                 Toast.makeText(this, "Archived", Toast.LENGTH_SHORT).show();
                 finish();
             });
@@ -140,7 +146,7 @@ public class MailViewActivity extends AppCompatActivity {
                     return true;
                 } else if (id == R.id.menu_report_spam) {
                     removeAllInboxLabels(() -> {
-                        viewModel.addLabel(mailId, "spam", jwtToken);
+                        viewModel.addLabel(mailId, "spam", jwtToken, getApplicationContext());
                         Toast.makeText(this, "Reported as spam", Toast.LENGTH_SHORT).show();
                         finish();
                     });
@@ -155,8 +161,7 @@ public class MailViewActivity extends AppCompatActivity {
     }
 
     private void updateStarIcon() {
-        starButton.setImageResource(isStarred ?
-                R.drawable.ic_star : R.drawable.ic_star);
+        starButton.setImageResource(isStarred ? R.drawable.ic_star : R.drawable.ic_star);
     }
 
     private void removeLabelsSequentially(List<String> labels, int index, Runnable onComplete) {
@@ -197,7 +202,6 @@ public class MailViewActivity extends AppCompatActivity {
         removeLabelsSequentially(labelsToRemove, 0, onComplete);
     }
 
-
     private void showMoveToDialog() {
         String[] folderNames = {"Primary", "Promotions", "Social", "Updates", "Spam", "Trash", "Drafts", "Starred", "Important"};
         String[] labelValues = {"primary", "promotions", "social", "updates", "spam", "trash", "drafts", "starred", "important"};
@@ -207,7 +211,7 @@ public class MailViewActivity extends AppCompatActivity {
                 .setItems(folderNames, (dialog, which) -> {
                     String targetLabel = labelValues[which];
                     removeAllInboxLabels(() -> {
-                        viewModel.addLabel(mailId, targetLabel, jwtToken);
+                        viewModel.addLabel(mailId, targetLabel, jwtToken, getApplicationContext());
                         runOnUiThread(() -> {
                             Toast.makeText(this, "Moved to " + folderNames[which], Toast.LENGTH_SHORT).show();
                             finish();
@@ -224,5 +228,43 @@ public class MailViewActivity extends AppCompatActivity {
                 label.equalsIgnoreCase("updates") || label.equalsIgnoreCase("trash") ||
                 label.equalsIgnoreCase("drafts") || label.equalsIgnoreCase("spam") ||
                 label.equalsIgnoreCase("archive") || label.equalsIgnoreCase("important");
+    }
+
+    // Helper: Formats ISO-8601 timestamps to "MMM d" without using java.time on API < 26.
+// Supports "2025-08-10T12:34:56Z" and offsets like "+02:00".
+    private String formatIso8601ToMonthDay(String iso) throws Exception {
+        if (iso == null || iso.isEmpty()) throw new IllegalArgumentException("empty timestamp");
+
+        if (android.os.Build.VERSION.SDK_INT >= 26) {
+            // Prefer modern API on newer devices
+            java.time.OffsetDateTime odt = java.time.OffsetDateTime.parse(iso);
+            Date date = Date.from(odt.toInstant());
+            return new SimpleDateFormat("MMM d", Locale.getDefault()).format(date);
+        } else {
+            // Normalize offset by removing the colon in timezone if present, e.g. +02:00 -> +0200
+            String normalized = iso;
+            int plus = Math.max(iso.lastIndexOf('+'), iso.lastIndexOf('-'));
+            if (plus > 10 && iso.length() >= plus + 6 && iso.charAt(iso.length() - 3) == ':') {
+                normalized = iso.substring(0, iso.length() - 3) + iso.substring(iso.length() - 2);
+            }
+
+            // Choose pattern depending on presence of milliseconds and timezone
+            boolean hasMillis = normalized.contains(".");
+            boolean hasZone = normalized.endsWith("Z") || normalized.matches(".*[\\+\\-]\\d{4}$");
+            String pattern;
+            if (hasZone) {
+                pattern = hasMillis ? "yyyy-MM-dd'T'HH:mm:ss.SSSZ" : "yyyy-MM-dd'T'HH:mm:ssZ";
+            } else {
+                pattern = hasMillis ? "yyyy-MM-dd'T'HH:mm:ss.SSS" : "yyyy-MM-dd'T'HH:mm:ss";
+            }
+
+            java.text.SimpleDateFormat parser = new java.text.SimpleDateFormat(pattern, Locale.US);
+            parser.setLenient(true);
+            if (normalized.endsWith("Z")) {
+                parser.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+            }
+            Date date = parser.parse(normalized);
+            return new SimpleDateFormat("MMM d", Locale.getDefault()).format(date);
+        }
     }
 }
