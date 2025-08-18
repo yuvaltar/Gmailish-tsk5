@@ -3,6 +3,7 @@ package com.example.gmailish.mail;
 import android.app.AlertDialog;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -14,6 +15,7 @@ import androidx.lifecycle.ViewModelProvider;
 import com.example.gmailish.R;
 
 import org.json.JSONArray;
+import org.json.JSONObject;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -142,7 +144,7 @@ public class MailViewActivity extends AppCompatActivity {
                     showMoveToDialog();
                     return true;
                 } else if (id == R.id.menu_label_as) {
-                    Toast.makeText(this, "Label as (not implemented yet)", Toast.LENGTH_SHORT).show();
+                    showLabelAssignmentDialog();
                     return true;
                 } else if (id == R.id.menu_report_spam) {
                     removeAllInboxLabels(() -> {
@@ -166,7 +168,7 @@ public class MailViewActivity extends AppCompatActivity {
 
     private void removeLabelsSequentially(List<String> labels, int index, Runnable onComplete) {
         if (index >= labels.size()) {
-            onComplete.run();
+            runOnUiThread(onComplete);
             return;
         }
 
@@ -187,7 +189,6 @@ public class MailViewActivity extends AppCompatActivity {
             try {
                 String label = currentLabels.getString(i);
                 if (!label.equals("starred") && isInboxLabel(label)) {
-                    // Normalize inbox to primary
                     if (label.equalsIgnoreCase("inbox")) {
                         labelsToRemove.add("primary");
                     } else {
@@ -217,6 +218,52 @@ public class MailViewActivity extends AppCompatActivity {
                             finish();
                         });
                     });
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void showLabelAssignmentDialog() {
+        List<String> options = new ArrayList<>();
+        options.add("Add to new label");
+
+        for (String name : viewModel.getUserLabelNames()) {
+            options.add(name);
+        }
+
+
+        CharSequence[] choices = options.toArray(new CharSequence[0]);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Add to label")
+                .setItems(choices, (dialog, which) -> {
+                    if (which == 0) {
+                        showNewLabelInput();
+                    } else {
+                        String selectedLabel = options.get(which);
+                        viewModel.addLabel(mailId, selectedLabel, jwtToken);
+                        Toast.makeText(this, "Added to " + selectedLabel, Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void showNewLabelInput() {
+        final EditText input = new EditText(this);
+        input.setHint("Label name");
+
+        new AlertDialog.Builder(this)
+                .setTitle("Create new label")
+                .setView(input)
+                .setPositiveButton("Create", (dialog, which) -> {
+                    String newLabel = input.getText().toString().trim();
+                    if (!newLabel.isEmpty()) {
+                        viewModel.addLabel(mailId, newLabel, jwtToken);
+                        Toast.makeText(this, "Added to " + newLabel, Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(this, "Label name cannot be empty", Toast.LENGTH_SHORT).show();
+                    }
                 })
                 .setNegativeButton("Cancel", null)
                 .show();

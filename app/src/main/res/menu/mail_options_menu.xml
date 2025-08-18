@@ -3,14 +3,17 @@
 
     <item
         android:id="@+id/menu_move_to"
+        android:icon="@drawable/ic_move_to"
         android:title="Move to" />
 
     <item
         android:id="@+id/menu_label_as"
+        android:icon="@drawable/ic_label"
         android:title="Label as" />
 
     <item
         android:id="@+id/menu_report_spam"
+        android:icon="@drawable/ic_spam"
         android:title="Report spam"
         android:titleTextColor="@android:color/holo_red_light" />
 

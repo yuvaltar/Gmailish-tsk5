@@ -13,6 +13,8 @@ import com.example.gmailish.data.repository.MailRepository;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -35,6 +37,7 @@ public class MailViewModel extends ViewModel {
     private final OkHttpClient client = new OkHttpClient();
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
+    private List<JSONObject> userLabels = new ArrayList<>(); // 🔹 stores user-defined labels
     // Room repo and background executor for DB writes (called after server success)
     private MailRepository mailRepository; // initialized via init(context)
     private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
@@ -57,6 +60,17 @@ public class MailViewModel extends ViewModel {
     private String normalizeLabel(String label) {
         return label.equalsIgnoreCase("inbox") ? "primary" : label;
     }
+
+    public void setUserLabels(List<JSONObject> labels) {
+        this.userLabels = labels;
+    }
+
+    public List<String> getUserLabelNames() {
+        List<String> names = new ArrayList<>();
+        for (JSONObject label : userLabels) {
+            names.add(label.optString("name"));
+        }
+        return names;
 
     private String getOwnerId(Context ctx) {
         if (cachedOwnerId != null) return cachedOwnerId;
