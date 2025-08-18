@@ -114,7 +114,38 @@ public class MailViewModel extends ViewModel {
             }
         });
     }
+    public void markAsRead(String mailId, String jwtToken) {
+        Log.d(TAG, "markAsRead: mailId=" + mailId + " hasToken=" + (jwtToken != null));
 
+        Request request = new Request.Builder()
+                .url("http://10.0.2.2:3000/api/mails/" + mailId + "/read")
+                .patch(RequestBody.create(null, new byte[0])) // empty body
+                .header("Authorization", "Bearer " + jwtToken)
+                .build();
+
+        client.newCall(request).enqueue(new Callback() {
+            @Override public void onFailure(Call call, IOException e) {
+                Log.e(TAG, "markAsRead network error: " + e.getMessage());
+                // We keep optimistic UI; no toast needed unless you want one
+            }
+
+            @Override public void onResponse(Call call, Response response) throws IOException {
+                Log.d(TAG, "markAsRead response code=" + response.code());
+                if (!response.isSuccessful()) {
+                    Log.e(TAG, "markAsRead failed: " + response.code());
+                    return;
+                }
+                // If this ViewModel is showing a single mail, reflect 'read=true'
+                try {
+                    JSONObject cur = mailData.getValue();
+                    if (cur != null) {
+                        cur.put("read", true);
+                        mailData.postValue(cur);
+                    }
+                } catch (Exception ignored) {}
+            }
+        });
+    }
     public void toggleStar(String mailId, String jwtToken) {
         Log.d(TAG, "toggleStar: mailId=" + mailId);
         Request request = new Request.Builder()

@@ -27,7 +27,6 @@ import okhttp3.Response;
 
 public class InboxViewModel extends AndroidViewModel {
 
-
     private static final String TAG = "InboxVM";
 
     private final MutableLiveData<List<Email>> emailsLiveData = new MutableLiveData<>();
@@ -50,6 +49,20 @@ public class InboxViewModel extends AndroidViewModel {
     public LiveData<User> getCurrentUserLiveData() {
         return currentUserLiveData;
     }
+
+    // ---- Helpers ----
+
+    private boolean hasStarredLabel(JSONObject obj) {
+        JSONArray labels = obj.optJSONArray("labels");
+        if (labels != null) {
+            for (int j = 0; j < labels.length(); j++) {
+                if ("starred".equalsIgnoreCase(labels.optString(j))) return true;
+            }
+        }
+        return false;
+    }
+
+    // ---- API calls ----
 
     // Fetch /users/me and save id/username into SharedPreferences for ComposeActivity
     public void loadCurrentUser(String token) {
@@ -77,7 +90,6 @@ public class InboxViewModel extends AndroidViewModel {
 
                     try {
                         JSONObject json = new JSONObject(body);
-                        // Adjust keys if your backend uses different names (e.g. "_id")
                         String id = json.optString("id", null);
                         String username = json.optString("username", null);
                         String picture = json.optString("picture", "");
@@ -85,7 +97,6 @@ public class InboxViewModel extends AndroidViewModel {
 
                         Log.d(TAG, "Parsed user -> id=" + id + ", username=" + username);
 
-                        // Persist for ComposeActivity (senderId/senderName)
                         SharedPreferences prefs = getApplication()
                                 .getSharedPreferences("prefs", Context.MODE_PRIVATE);
                         prefs.edit()
@@ -162,13 +173,16 @@ public class InboxViewModel extends AndroidViewModel {
                         List<Email> parsedEmails = new ArrayList<>();
                         for (int i = 0; i < jsonArray.length(); i++) {
                             JSONObject obj = jsonArray.getJSONObject(i);
+
+                            boolean isStarred = hasStarredLabel(obj);
+
                             parsedEmails.add(new Email(
                                     obj.optString("senderName"),
                                     obj.optString("subject"),
                                     obj.optString("content"),
                                     obj.optString("timestamp"),
                                     obj.optBoolean("read"),
-                                    obj.optBoolean("starred"),
+                                    isStarred, // derive from labels
                                     obj.optString("id")
                             ));
                         }
@@ -193,13 +207,16 @@ public class InboxViewModel extends AndroidViewModel {
 
             for (int i = 0; i < jsonArray.length(); i++) {
                 JSONObject obj = jsonArray.getJSONObject(i);
+
+                boolean isStarred = hasStarredLabel(obj);
+
                 parsedEmails.add(new Email(
                         obj.optString("senderName"),
                         obj.optString("subject"),
                         obj.optString("content"),
                         obj.optString("timestamp"),
                         obj.optBoolean("read"),
-                        obj.optBoolean("starred"),
+                        isStarred, // derive from labels
                         obj.optString("id")
                 ));
             }
