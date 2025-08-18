@@ -3,6 +3,7 @@ package com.example.gmailish.ui.inbox;
 import android.app.Application;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.util.Log;
 
 import androidx.lifecycle.AndroidViewModel;
 import androidx.lifecycle.LiveData;
@@ -23,16 +24,16 @@ import okhttp3.Callback;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
-import android.util.Log;
 
 public class InboxViewModel extends AndroidViewModel {
+
+
+    private static final String TAG = "InboxVM";
 
     private final MutableLiveData<List<Email>> emailsLiveData = new MutableLiveData<>();
     private final MutableLiveData<String> errorLiveData = new MutableLiveData<>();
     private final OkHttpClient client = new OkHttpClient();
-
     private final MutableLiveData<User> currentUserLiveData = new MutableLiveData<>();
-
 
     public InboxViewModel(Application application) {
         super(application);
@@ -50,9 +51,9 @@ public class InboxViewModel extends AndroidViewModel {
         return currentUserLiveData;
     }
 
-    public void loadCurrentUser() {
-        String token = getJwtToken();
-        if (token == null) return;
+    // Fetch /users/me and save id/username into SharedPreferences for ComposeActivity
+    public void loadCurrentUser(String token) {
+        Log.d(TAG, "loadCurrentUser called. hasToken=" + (token != null));
 
         Request request = new Request.Builder()
                 .url("http://10.0.2.2:3000/api/users/me")
@@ -60,55 +61,70 @@ public class InboxViewModel extends AndroidViewModel {
                 .build();
 
         client.newCall(request).enqueue(new Callback() {
-            @Override
-            public void onFailure(Call call, IOException e) {
-                Log.e("CurrentUser", "Failed to fetch: " + e.getMessage());
+            @Override public void onFailure(Call call, IOException e) {
+                Log.e(TAG, "CurrentUser network failure: " + e.getMessage());
             }
 
-            @Override
-            public void onResponse(Call call, Response response) throws IOException {
-                if (!response.isSuccessful()) {
-                    Log.e("CurrentUser", "Response error: " + response.code());
-                    return;
-                }
+            @Override public void onResponse(Call call, Response response) throws IOException {
+                try (Response r = response) {
+                    if (!r.isSuccessful()) {
+                        Log.e(TAG, "CurrentUser response error: code=" + r.code());
+                        return;
+                    }
 
-                try {
-                    String body = response.body().string();
-                    JSONObject json = new JSONObject(body);
-                    String id = json.optString("id");
-                    String username = json.optString("username");
-                    String picture = json.optString("picture", "");
+                    String body = r.body() != null ? r.body().string() : "";
+                    Log.d(TAG, "CurrentUser raw: " + body);
 
-                    currentUserLiveData.postValue(new User(id, username, picture));
-                } catch (Exception e) {
-                    Log.e("CurrentUser", "Parse error: " + e.getMessage());
+                    try {
+                        JSONObject json = new JSONObject(body);
+                        // Adjust keys if your backend uses different names (e.g. "_id")
+                        String id = json.optString("id", null);
+                        String username = json.optString("username", null);
+                        String picture = json.optString("picture", "");
+
+                        Log.d(TAG, "Parsed user -> id=" + id + ", username=" + username);
+
+                        // Persist for ComposeActivity (senderId/senderName)
+                        SharedPreferences prefs = getApplication()
+                                .getSharedPreferences("prefs", Context.MODE_PRIVATE);
+                        prefs.edit()
+                                .putString("user_id", id)
+                                .putString("username", username)
+                                .apply();
+                        Log.d(TAG, "Saved to prefs: user_id=" + id + ", username=" + username);
+
+                        currentUserLiveData.postValue(new User(id, username, picture));
+                    } catch (Exception e) {
+                        Log.e(TAG, "CurrentUser parse error: " + e.getMessage());
+                    }
                 }
             }
         });
     }
 
     public void loadEmails(String jwtToken) {
+        Log.d(TAG, "loadEmails called. hasToken=" + (jwtToken != null));
         Request request = new Request.Builder()
                 .url("http://10.0.2.2:3000/api/mails")
                 .header("Authorization", "Bearer " + jwtToken)
                 .build();
 
         client.newCall(request).enqueue(new Callback() {
-            @Override
-            public void onFailure(Call call, IOException e) {
+            @Override public void onFailure(Call call, IOException e) {
+                Log.e(TAG, "loadEmails network error: " + e.getMessage());
                 errorLiveData.postValue("Network error: " + e.getMessage());
             }
 
-            @Override
-            public void onResponse(Call call, Response response) throws IOException {
-                if (!response.isSuccessful()) {
-                    errorLiveData.postValue("Error code: " + response.code());
-                    return;
-                }
-
-                List<Email> parsedEmails = parseEmailList(response);
-                if (parsedEmails != null) {
-                    emailsLiveData.postValue(parsedEmails);
+            @Override public void onResponse(Call call, Response response) throws IOException {
+                try (Response r = response) {
+                    if (!r.isSuccessful()) {
+                        Log.e(TAG, "loadEmails error code: " + r.code());
+                        errorLiveData.postValue("Error code: " + r.code());
+                        return;
+                    }
+                    List<Email> parsed = parseEmailList(r);
+                    Log.d(TAG, "loadEmails parsed count=" + (parsed != null ? parsed.size() : -1));
+                    if (parsed != null) emailsLiveData.postValue(parsed);
                 }
             }
         });
@@ -116,63 +132,63 @@ public class InboxViewModel extends AndroidViewModel {
 
     public void searchEmails(String query) {
         errorLiveData.setValue(null);
+        String token = getJwtToken();
+        Log.d(TAG, "searchEmails q=\"" + query + "\" hasToken=" + (token != null));
 
         Request request = new Request.Builder()
                 .url("http://10.0.2.2:3000/api/mails/search/" + query)
-                .header("Authorization", "Bearer " + getJwtToken())
+                .header("Authorization", "Bearer " + token)
                 .build();
 
         client.newCall(request).enqueue(new Callback() {
-            @Override
-            public void onFailure(Call call, IOException e) {
-                Log.e("SearchError", "Network error: " + e.getMessage());
+            @Override public void onFailure(Call call, IOException e) {
+                Log.e(TAG, "Search network error: " + e.getMessage());
                 errorLiveData.postValue("Search error: " + e.getMessage());
             }
 
-            @Override
-            public void onResponse(Call call, Response response) throws IOException {
-                if (!response.isSuccessful()) {
-                    Log.e("SearchError", "Search failed: " + response.code());
-                    errorLiveData.postValue("Search failed: " + response.code());
-                    return;
-                }
-
-                String jsonStr = response.body().string();
-                Log.d("SearchRaw", jsonStr);
-
-                try {
-                    JSONArray jsonArray = new JSONArray(jsonStr);
-                    List<Email> parsedEmails = new ArrayList<>();
-
-                    for (int i = 0; i < jsonArray.length(); i++) {
-                        JSONObject obj = jsonArray.getJSONObject(i);
-                        parsedEmails.add(new Email(
-                                obj.optString("senderName"),
-                                obj.optString("subject"),
-                                obj.optString("content"),
-                                obj.optString("timestamp"),
-                                obj.optBoolean("read"),
-                                obj.optBoolean("starred"),
-                                obj.optString("id")
-                        ));
+            @Override public void onResponse(Call call, Response response) throws IOException {
+                try (Response r = response) {
+                    if (!r.isSuccessful()) {
+                        Log.e(TAG, "Search failed: code=" + r.code());
+                        errorLiveData.postValue("Search failed: " + r.code());
+                        return;
                     }
+                    String jsonStr = r.body() != null ? r.body().string() : "[]";
+                    Log.d(TAG, "Search raw: " + jsonStr);
 
-                    Log.d("SearchResult", "Parsed emails: " + parsedEmails.size());
-                    emailsLiveData.postValue(parsedEmails);
-
-                } catch (Exception e) {
-                    Log.e("SearchError", "JSON parse error: " + e.getMessage());
-                    errorLiveData.postValue("JSON parse error: " + e.getMessage());
+                    try {
+                        JSONArray jsonArray = new JSONArray(jsonStr);
+                        List<Email> parsedEmails = new ArrayList<>();
+                        for (int i = 0; i < jsonArray.length(); i++) {
+                            JSONObject obj = jsonArray.getJSONObject(i);
+                            parsedEmails.add(new Email(
+                                    obj.optString("senderName"),
+                                    obj.optString("subject"),
+                                    obj.optString("content"),
+                                    obj.optString("timestamp"),
+                                    obj.optBoolean("read"),
+                                    obj.optBoolean("starred"),
+                                    obj.optString("id")
+                            ));
+                        }
+                        Log.d(TAG, "Search parsed count=" + parsedEmails.size());
+                        emailsLiveData.postValue(parsedEmails);
+                    } catch (Exception e) {
+                        Log.e(TAG, "Search JSON parse error: " + e.getMessage());
+                        errorLiveData.postValue("JSON parse error: " + e.getMessage());
+                    }
                 }
             }
         });
     }
 
-
     private List<Email> parseEmailList(Response response) throws IOException {
         try {
+            String body = response.body() != null ? response.body().string() : "[]";
+            Log.d(TAG, "Emails raw: " + body);
+
             List<Email> parsedEmails = new ArrayList<>();
-            JSONArray jsonArray = new JSONArray(response.body().string());
+            JSONArray jsonArray = new JSONArray(body);
 
             for (int i = 0; i < jsonArray.length(); i++) {
                 JSONObject obj = jsonArray.getJSONObject(i);
@@ -186,9 +202,9 @@ public class InboxViewModel extends AndroidViewModel {
                         obj.optString("id")
                 ));
             }
-
             return parsedEmails;
         } catch (Exception e) {
+            Log.e(TAG, "parseEmailList error: " + e.getMessage());
             errorLiveData.postValue("JSON parse error: " + e.getMessage());
             return null;
         }
@@ -197,12 +213,16 @@ public class InboxViewModel extends AndroidViewModel {
     private String getJwtToken() {
         SharedPreferences prefs = getApplication()
                 .getSharedPreferences("prefs", Context.MODE_PRIVATE);
-        return prefs.getString("jwt", null);
+        String jwt = prefs.getString("jwt", null);
+        Log.d(TAG, "getJwtToken -> " + (jwt != null));
+        return jwt;
     }
+
     public void loadEmailsByLabel(String label) {
         errorLiveData.setValue(null);
-
         String token = getJwtToken();
+        Log.d(TAG, "loadEmailsByLabel \"" + label + "\" hasToken=" + (token != null));
+
         if (token == null) {
             errorLiveData.postValue("JWT token missing");
             return;
@@ -216,25 +236,23 @@ public class InboxViewModel extends AndroidViewModel {
                 .build();
 
         client.newCall(request).enqueue(new Callback() {
-            @Override
-            public void onFailure(Call call, IOException e) {
+            @Override public void onFailure(Call call, IOException e) {
+                Log.e(TAG, "Label '" + label + "' network error: " + e.getMessage());
                 errorLiveData.postValue("Failed to load '" + label + "': " + e.getMessage());
             }
 
-            @Override
-            public void onResponse(Call call, Response response) throws IOException {
-                if (!response.isSuccessful()) {
-                    errorLiveData.postValue("Server error " + response.code() + " loading '" + label + "'");
-                    return;
-                }
-
-                List<Email> parsed = parseEmailList(response);
-                if (parsed != null) {
-                    emailsLiveData.postValue(parsed);
+            @Override public void onResponse(Call call, Response response) throws IOException {
+                try (Response r = response) {
+                    if (!r.isSuccessful()) {
+                        Log.e(TAG, "Label '" + label + "' server error: " + r.code());
+                        errorLiveData.postValue("Server error " + r.code() + " loading '" + label + "'");
+                        return;
+                    }
+                    List<Email> parsed = parseEmailList(r);
+                    Log.d(TAG, "Label '" + label + "' parsed count=" + (parsed != null ? parsed.size() : -1));
+                    if (parsed != null) emailsLiveData.postValue(parsed);
                 }
             }
         });
     }
-
-
 }

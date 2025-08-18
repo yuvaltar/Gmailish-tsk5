@@ -1,6 +1,7 @@
 package com.example.gmailish.ui.register;
 
 import android.annotation.SuppressLint;
+
 import android.app.Activity;
 import android.app.DatePickerDialog;
 import android.content.Intent;
@@ -38,7 +39,8 @@ import java.util.Locale;
 
 public class RegisterActivity extends AppCompatActivity {
 
-    private RegisterViewModel viewModel;
+
+    private RegisterViewModel vm;
     private ProgressBar progressBar;
     private TextView stepIndicator;
     private LinearLayout progressSection;
@@ -73,7 +75,10 @@ public class RegisterActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_register);
 
-        viewModel = new ViewModelProvider(this).get(RegisterViewModel.class);
+        // ViewModel
+        vm = new ViewModelProvider(this).get(RegisterViewModel.class);
+        vm.setDatabaseContext(getApplicationContext()); // Important for Room (no Hilt)
+
         progressBar = findViewById(R.id.progressBar);
         stepIndicator = findViewById(R.id.step_indicator);
         progressSection = findViewById(R.id.progress_section);
@@ -125,14 +130,11 @@ public class RegisterActivity extends AppCompatActivity {
         imagePreview = findViewById(R.id.imagePreview);
         selectImageButton = findViewById(R.id.button_select_image);
 
-        // Initialize logo ImageView (automatically handles day/night mode switching)
         logo = findViewById(R.id.logo);
 
-        // Initialize welcome block buttons
         buttonGetStarted = findViewById(R.id.button_get_started);
         buttonLogin = findViewById(R.id.button_login);
 
-        // Initialize back buttons
         backToWelcome = findViewById(R.id.back_to_welcome);
         backToStep1 = findViewById(R.id.back_to_step1);
         backToStep2 = findViewById(R.id.back_to_step2);
@@ -168,7 +170,6 @@ public class RegisterActivity extends AppCompatActivity {
                         selectedCal.set(year1, month1, dayOfMonth);
                         selectedDob = selectedCal.getTime();
 
-                        // Format for display
                         SimpleDateFormat sdf = new SimpleDateFormat("dd/MM/yyyy", Locale.getDefault());
                         dobInput.setText(sdf.format(selectedDob));
                     },
@@ -193,23 +194,18 @@ public class RegisterActivity extends AppCompatActivity {
         Button next2 = findViewById(R.id.next2);
         Button submitButton = findViewById(R.id.submitRegistration);
 
-        // Welcome block buttons
         buttonGetStarted.setOnClickListener(v -> {
             welcomeBlock.setVisibility(View.GONE);
             stepName.setVisibility(View.VISIBLE);
             progressSection.setVisibility(View.VISIBLE);
-
-            // Show the back button for step 1
             backToWelcome.setVisibility(View.VISIBLE);
-
             updateProgress(1, "Step 1 of 3");
         });
 
         buttonLogin.setOnClickListener(v -> {
-            // Go to login activity for existing users
             Intent intent = new Intent(this, LoginActivity.class);
             startActivity(intent);
-            finish(); // Close registration activity
+            finish();
         });
 
         selectImageButton.setOnClickListener(v -> {
@@ -219,25 +215,23 @@ public class RegisterActivity extends AppCompatActivity {
         });
 
         next1.setOnClickListener(v -> {
-            boolean valid = viewModel.setName(
+            boolean valid = vm.setName(
                     firstNameInput.getText().toString(),
                     lastNameInput.getText().toString()
             );
             if (valid) {
-                // Photo is now optional - create imageFile only if image is selected
                 if (selectedImageUri != null) {
                     imageFile = getFileFromUri(selectedImageUri);
                     if (imageFile == null) {
                         Toast.makeText(this, "Selected image could not be processed, continuing without image", Toast.LENGTH_SHORT).show();
                     }
                 } else {
-                    imageFile = null; // No image selected, that's okay
+                    imageFile = null;
                 }
 
                 stepName.setVisibility(View.GONE);
                 stepDobGender.setVisibility(View.VISIBLE);
 
-                // Switch back buttons
                 backToWelcome.setVisibility(View.GONE);
                 backToStep1.setVisibility(View.VISIBLE);
 
@@ -247,12 +241,11 @@ public class RegisterActivity extends AppCompatActivity {
 
         next2.setOnClickListener(v -> {
             String gender = genderSpinner.getText() != null ? genderSpinner.getText().toString() : "";
-            boolean valid = viewModel.setDobAndGender(selectedDob, gender);
+            boolean valid = vm.setDobAndGender(selectedDob, gender);
             if (valid) {
                 stepDobGender.setVisibility(View.GONE);
                 stepUsername.setVisibility(View.VISIBLE);
 
-                // Switch back buttons
                 backToStep1.setVisibility(View.GONE);
                 backToStep2.setVisibility(View.VISIBLE);
 
@@ -261,17 +254,16 @@ public class RegisterActivity extends AppCompatActivity {
         });
 
         submitButton.setOnClickListener(v -> {
-            boolean valid = viewModel.setUsernameAndPassword(
+            boolean valid = vm.setUsernameAndPassword(
                     usernameInput.getText().toString(),
                     passwordInput.getText().toString(),
                     confirmInput.getText().toString()
             );
             if (valid) {
-                viewModel.register(imageFile); // imageFile can be null now
+                vm.register(imageFile);
             }
         });
 
-        // Back navigation buttons
         backToWelcome.setOnClickListener(v -> {
             stepName.setVisibility(View.GONE);
             welcomeBlock.setVisibility(View.VISIBLE);
@@ -334,43 +326,39 @@ public class RegisterActivity extends AppCompatActivity {
     }
 
     private void setupObservers() {
-        viewModel.firstNameError.observe(this, err -> {
+        vm.firstNameError.observe(this, err -> {
             if (err != null) firstNameInput.setError(err);
         });
-        viewModel.lastNameError.observe(this, err -> {
+        vm.lastNameError.observe(this, err -> {
             if (err != null) lastNameInput.setError(err);
         });
-        viewModel.dobError.observe(this, err -> {
+        vm.dobError.observe(this, err -> {
             if (err != null) dobInput.setError(err);
         });
-        viewModel.passwordError.observe(this, err -> {
+        vm.passwordError.observe(this, err -> {
             if (err != null) passwordInput.setError(err);
         });
-        viewModel.message.observe(this, msg -> {
+        vm.message.observe(this, msg -> {
             Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
         });
-        viewModel.registrationSuccess.observe(this, success -> {
-            if (success) {
+        vm.registrationSuccess.observe(this, success -> {
+            if (success != null && success) {
                 Intent intent = new Intent(this, LoginActivity.class);
                 startActivity(intent);
+                finish();
             }
         });
     }
 
     @Override
     public void onBackPressed() {
-        // Handle hardware back button
         if (stepUsername.getVisibility() == View.VISIBLE) {
-            // From step 3 to step 2
             backToStep2.performClick();
         } else if (stepDobGender.getVisibility() == View.VISIBLE) {
-            // From step 2 to step 1
             backToStep1.performClick();
         } else if (stepName.getVisibility() == View.VISIBLE) {
-            // From step 1 to welcome
             backToWelcome.performClick();
         } else {
-            // From welcome screen - exit app
             super.onBackPressed();
         }
     }
