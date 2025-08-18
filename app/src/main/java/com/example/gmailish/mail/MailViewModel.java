@@ -6,6 +6,8 @@ import androidx.lifecycle.ViewModel;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -23,8 +25,22 @@ public class MailViewModel extends ViewModel {
     private final OkHttpClient client = new OkHttpClient();
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
+    private List<JSONObject> userLabels = new ArrayList<>(); // 🔹 stores user-defined labels
+
     private String normalizeLabel(String label) {
         return label.equalsIgnoreCase("inbox") ? "primary" : label;
+    }
+
+    public void setUserLabels(List<JSONObject> labels) {
+        this.userLabels = labels;
+    }
+
+    public List<String> getUserLabelNames() {
+        List<String> names = new ArrayList<>();
+        for (JSONObject label : userLabels) {
+            names.add(label.optString("name"));
+        }
+        return names;
     }
 
     public void fetchMailById(String mailId, String jwtToken) {
