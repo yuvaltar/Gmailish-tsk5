@@ -81,6 +81,7 @@ public class InboxViewModel extends AndroidViewModel {
                         String id = json.optString("id", null);
                         String username = json.optString("username", null);
                         String picture = json.optString("picture", "");
+                        String pictureUrl = json.optString("pictureUrl", null);
 
                         Log.d(TAG, "Parsed user -> id=" + id + ", username=" + username);
 
@@ -93,7 +94,7 @@ public class InboxViewModel extends AndroidViewModel {
                                 .apply();
                         Log.d(TAG, "Saved to prefs: user_id=" + id + ", username=" + username);
 
-                        currentUserLiveData.postValue(new User(id, username, picture));
+                        currentUserLiveData.postValue(new User(id, username, picture, pictureUrl));
                     } catch (Exception e) {
                         Log.e(TAG, "CurrentUser parse error: " + e.getMessage());
                     }

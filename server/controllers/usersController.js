@@ -120,11 +120,19 @@ exports.getCurrentUser = async (req, res) => {
     try {
     const user = req.user;
     if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const raw   = user.picture || null;
+    const clean = raw ? String(raw).replace(/^\/?uploads\//, '') : null;
+
+    const base = process.env.PUBLIC_BASE_URL
+      ? process.env.PUBLIC_BASE_URL.replace(/\/$/, '')
+      : `http://${process.env.HOST || '127.0.0.1'}:${process.env.PORT || 3000}`;
     // only send the bits your client needs
     return res.json({
-      id:       user.id,
-      username: user.username,
-      picture:  user.picture || ''
+      id:         user.id,
+      username:   user.username,
+      picture:    raw || '',
+      pictureUrl: clean ? `${base}/uploads/${clean}` : null
     });
   } catch (err) {
    console.error(err);

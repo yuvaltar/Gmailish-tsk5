@@ -38,9 +38,9 @@ public class HeaderManager {
                     if (user == null) return;
 
                     // Load image or letter
-                    if (user.getPicture() != null && !user.getPicture().isEmpty()) {
+                    if (user.getPictureUrl() != null && !user.getPictureUrl().isEmpty()) {
                         Glide.with(activity)
-                                .load("http://10.0.2.2:3000/api/users/" + user.getId() + "/picture")
+                                .load(user.getPictureUrl())
                                 .circleCrop()
                                 .into(avatarImageView);
                         avatarImageView.setVisibility(View.VISIBLE);
