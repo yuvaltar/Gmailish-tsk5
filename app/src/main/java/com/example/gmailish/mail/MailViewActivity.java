@@ -94,6 +94,8 @@ public class MailViewActivity extends AppCompatActivity {
 
         viewModel.fetchMailById(mailId, jwtToken);
 
+        viewModel.markAsRead(mailId, jwtToken);
+
         replyButton.setOnClickListener(v ->
                 Toast.makeText(this, "Reply (not implemented yet)", Toast.LENGTH_SHORT).show());
 
@@ -159,7 +161,7 @@ public class MailViewActivity extends AppCompatActivity {
 
     private void updateStarIcon() {
         // You may have a different filled/outline icon. Adjust as needed.
-        starButton.setImageResource(isStarred ? R.drawable.ic_star : R.drawable.ic_star);
+        starButton.setImageResource(isStarred ? R.drawable.ic_star_shine : R.drawable.ic_star);
     }
 
     private void removeLabelsSequentially(List<String> labels, int index, Runnable onComplete) {
