@@ -1,0 +1,9 @@
+[33m828c9ed[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mtal[m[33m)[m Update .gitignore and remove tracked binary files
+[33me5a988e[m login design
+[33m65adfc2[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Resolved conflcits: keep clean branch's content
+[33m89c93a5[m[33m ([m[1;31morigin/clean-branch[m[33m)[m Clean branch: removed unwanted files as per .gitignore
+[33m7564c14[m[33m ([m[1;31morigin/sidebarAbility[m[33m)[m Merge pull request #8 from yuvaltar/searchBar
+[33mb5d3c97[m[33m ([m[1;31morigin/searchBar[m[33m)[m Update: drawer header, menu polish, .gitignore; remove NUL issue
+[33m8555e64[m Remove Windows-reserved file NUL from index
+[33m0d8bf8a[m[33m ([m[1;31morigin/compose[m[33m)[m Merge pull request #7 from yuvaltar/inbox_page
+[33mab6fa03[m made jws to parse cookie and inbox to show mails and compose buttin
