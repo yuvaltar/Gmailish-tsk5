@@ -1,35 +1,169 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:orientation="vertical"
-    android:padding="24dp"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:fillViewport="true"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:background="@drawable/gradient_background">
 
-    <EditText
-        android:id="@+id/labelInput"
-        android:hint="Label name"
+    <androidx.constraintlayout.widget.ConstraintLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:inputType="text" />
+        tools:ignore="MissingClass">
 
-    <LinearLayout
-        android:orientation="horizontal"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="end"
-        android:layout_marginTop="16dp">
-
-        <Button
-            android:id="@+id/cancelLabelButton"
-            android:text="Cancel"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content" />
-
-        <Button
-            android:id="@+id/saveLabelButton"
-            android:text="Save"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:id="@+id/create_label_root"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="16dp" />
-    </LinearLayout>
-</LinearLayout>
+            android:animateLayoutChanges="true"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:padding="20dp"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintHorizontal_bias="0.0"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintVertical_bias="0.5">
+
+            <!-- ENHANCED HEADER SECTION -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:layout_marginBottom="32dp">
+
+                <ImageView
+                    android:id="@+id/label_icon"
+                    android:layout_width="80dp"
+                    android:layout_height="80dp"
+                    android:layout_marginBottom="8dp"
+                    android:contentDescription="Label Icon"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_label"
+                    app:tint="#4285F4" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Create New Label"
+                    android:textSize="16sp"
+                    android:textColor="#666666"
+                    android:fontFamily="sans-serif-medium" />
+            </LinearLayout>
+
+            <!-- ENHANCED CARD CONTAINER -->
+            <androidx.cardview.widget.CardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="8dp"
+                android:elevation="8dp"
+                app:cardBackgroundColor="@android:color/white"
+                app:cardCornerRadius="20dp"
+                app:cardElevation="8dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="vertical"
+                    android:padding="32dp">
+
+                    <!-- FORM TITLE -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="New Label"
+                        android:textSize="28sp"
+                        android:textStyle="bold"
+                        android:textColor="#1a73e8"
+                        android:gravity="center"
+                        android:layout_marginBottom="8dp"
+                        android:fontFamily="sans-serif-medium" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Enter a name for your new label to organize your emails"
+                        android:textSize="14sp"
+                        android:textColor="#666666"
+                        android:gravity="center"
+                        android:layout_marginBottom="32dp"
+                        android:fontFamily="sans-serif" />
+
+                    <!-- MATERIAL TEXT INPUT -->
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/labelInputLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="32dp"
+                        app:boxCornerRadiusTopStart="12dp"
+                        app:boxCornerRadiusTopEnd="12dp"
+                        app:boxCornerRadiusBottomStart="12dp"
+                        app:boxCornerRadiusBottomEnd="12dp"
+                        app:hintTextColor="#4285F4"
+                        app:boxStrokeColor="#4285F4"
+                        app:endIconMode="clear_text"
+                        app:counterEnabled="true"
+                        app:counterMaxLength="25">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/labelInput"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:hint="Label name"
+                            android:textSize="16sp"
+                            android:fontFamily="sans-serif"
+                            android:inputType="textCapWords"
+                            android:imeOptions="actionDone"
+                            android:maxLines="1" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <!-- BUTTON SECTION -->
+                    <LinearLayout
+                        android:orientation="horizontal"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="end"
+                        android:layout_marginTop="8dp">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/cancelLabelButton"
+                            style="@style/Widget.Material3.Button.TextButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="56dp"
+                            android:text="Cancel"
+                            android:textColor="#4285F4"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            android:fontFamily="sans-serif-medium"
+                            android:layout_marginEnd="12dp"
+                            app:cornerRadius="16dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/saveLabelButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="56dp"
+                            android:backgroundTint="#4285F4"
+                            android:text="Save Label"
+                            android:textColor="@android:color/white"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            app:cornerRadius="16dp"
+                            android:fontFamily="sans-serif-medium" />
+                    </LinearLayout>
+
+                </LinearLayout>
+            </androidx.cardview.widget.CardView>
+
+            <!-- FOOTER SPACING -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="24dp" />
+
+        </LinearLayout>
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+</ScrollView>

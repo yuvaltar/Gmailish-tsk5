@@ -2,8 +2,6 @@ package com.example.gmailish.ui.inbox;
 
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
@@ -11,14 +9,10 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
-import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
-
-import com.example.gmailish.ui.HeaderManager;
-import com.example.gmailish.ui.inbox.CreateLabelActivity;
 
 import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.ActionBarDrawerToggle;
@@ -32,19 +26,16 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.gmailish.R;
-import com.example.gmailish.model.Email;
+import com.example.gmailish.ui.HeaderManager;
 import com.example.gmailish.ui.compose.ComposeActivity;
+import com.example.gmailish.ui.inbox.CreateLabelActivity;
+import com.google.android.material.button.MaterialButton;
 import com.google.android.material.navigation.NavigationView;
-
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.IOException;
-
-import java.io.InputStream;
-import java.net.URL;
-import java.util.List;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -57,33 +48,36 @@ public class InboxActivity extends AppCompatActivity {
     private InboxViewModel viewModel;
     private RecyclerView recyclerView;
     private EmailAdapter adapter;
-    private Button composeButton;
+    private MaterialButton composeButton;
+    private MaterialButton refreshButton;
     private DrawerLayout drawerLayout;
     private ActionBarDrawerToggle toggle;
     private ImageView avatarImageView;
     private TextView avatarLetterTextView;
 
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_inbox);
+        setContentView(R.layout.activity_inbox); // ✅ FIXED
 
-        avatarImageView = findViewById(R.id.avatarImageView);
-        avatarLetterTextView = findViewById(R.id.avatarLetterTextView);
+        // Initialize views
+        avatarImageView = findViewById(R.id.avatarImageView); // ✅ FIXED
+        avatarLetterTextView = findViewById(R.id.avatarLetterTextView); // ✅ FIXED
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
         }
 
-        drawerLayout = findViewById(R.id.drawerLayout);
-        ImageView hamburgerIcon = findViewById(R.id.hamburgerIcon);
+        // Setup drawer layout and hamburger menu
+        drawerLayout = findViewById(R.id.drawerLayout); // ✅ FIXED
+        ImageView hamburgerIcon = findViewById(R.id.hamburgerIcon); // ✅ FIXED
         toggle = new ActionBarDrawerToggle(this, drawerLayout, R.string.open, R.string.close);
         drawerLayout.addDrawerListener(toggle);
         toggle.syncState();
 
         hamburgerIcon.setOnClickListener(v -> drawerLayout.openDrawer(GravityCompat.START));
 
+        // Handle back press for drawer
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
             public void handleOnBackPressed() {
@@ -96,7 +90,8 @@ public class InboxActivity extends AppCompatActivity {
             }
         });
 
-        NavigationView navigationView = findViewById(R.id.navigationView);
+        // Setup navigation view
+        NavigationView navigationView = findViewById(R.id.navigationView); // ✅ FIXED
         View header = navigationView.getHeaderView(0);
         ViewCompat.setOnApplyWindowInsetsListener(header, (v, insets) -> {
             int top = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top;
@@ -126,7 +121,6 @@ public class InboxActivity extends AppCompatActivity {
             } else if (id == R.id.nav_create_label) {
                 startActivity(new Intent(this, CreateLabelActivity.class));
             } else {
-                // Handle dynamic label
                 CharSequence title = menuItem.getTitle();
                 if (title != null) {
                     viewModel.loadEmailsByLabel(title.toString().toLowerCase());
@@ -136,6 +130,7 @@ public class InboxActivity extends AppCompatActivity {
             return true;
         });
 
+        // Set default checked nav item and badges
         navigationView.setCheckedItem(R.id.nav_primary);
         Menu menu = navigationView.getMenu();
         setBadge(menu.findItem(R.id.nav_primary), "99+", 0xFFE6EDF6);
@@ -143,18 +138,36 @@ public class InboxActivity extends AppCompatActivity {
         setBadge(menu.findItem(R.id.nav_social), "27 new", 0xFFD5E4FF);
         setBadge(menu.findItem(R.id.nav_updates), "82 new", 0xFFFFE2CC);
 
+        // Load user labels
         loadUserLabels(navigationView);
 
-        recyclerView = findViewById(R.id.inboxRecyclerView);
+        // Setup RecyclerView
+        recyclerView = findViewById(R.id.inboxRecyclerView); // ✅ FIXED
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
+        recyclerView.setNestedScrollingEnabled(true);
         adapter = new EmailAdapter();
         recyclerView.setAdapter(adapter);
 
-        composeButton = findViewById(R.id.composeButton);
+        // Setup compose button
+        composeButton = findViewById(R.id.composeButton); // ✅ FIXED
         composeButton.setOnClickListener(v ->
                 startActivity(new Intent(this, ComposeActivity.class)));
 
-        EditText searchBar = findViewById(R.id.searchBar);
+        // Setup refresh button
+        refreshButton = findViewById(R.id.refreshButton); // ✅ FIXED
+        refreshButton.setOnClickListener(v -> {
+            SharedPreferences prefs = getSharedPreferences("prefs", MODE_PRIVATE);
+            String token = prefs.getString("jwt", null);
+            if (token != null) {
+                viewModel.loadEmails(token);
+                Toast.makeText(this, "Refreshing emails...", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this, "Please sign in again", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        // Setup search bar
+        EditText searchBar = findViewById(R.id.searchBar); // ✅ FIXED
         searchBar.setOnEditorActionListener((v, actionId, event) -> {
             Log.d("Search", "Search triggered with actionId=" + actionId);
             if (actionId == EditorInfo.IME_ACTION_SEARCH || actionId == EditorInfo.IME_NULL) {
@@ -167,6 +180,7 @@ public class InboxActivity extends AppCompatActivity {
             return false;
         });
 
+        // ViewModel setup
         viewModel = new ViewModelProvider(this).get(InboxViewModel.class);
         viewModel.getEmails().observe(this, adapter::updateData);
         viewModel.getError().observe(this, msg -> {
@@ -175,6 +189,7 @@ public class InboxActivity extends AppCompatActivity {
             }
         });
 
+        // HeaderManager
         HeaderManager.setup(
                 this,
                 viewModel,
@@ -182,33 +197,30 @@ public class InboxActivity extends AppCompatActivity {
                 avatarLetterTextView
         );
 
+        // Load data
         SharedPreferences prefs = getSharedPreferences("prefs", MODE_PRIVATE);
         String token = prefs.getString("jwt", null);
-
         if (token != null) {
             viewModel.loadEmails(token);
             viewModel.loadCurrentUser(token);
-
         } else {
             Toast.makeText(this, "JWT missing!", Toast.LENGTH_SHORT).show();
         }
     }
+
     @Override
     protected void onResume() {
         super.onResume();
 
-        // Reload labels
-        NavigationView navigationView = findViewById(R.id.navigationView);
+        NavigationView navigationView = findViewById(R.id.navigationView); // ✅ FIXED
         loadUserLabels(navigationView);
 
-        // ✅ Reload inbox mails
         SharedPreferences prefs = getSharedPreferences("prefs", MODE_PRIVATE);
         String token = prefs.getString("jwt", null);
         if (token != null) {
             viewModel.loadEmails(token);
         }
     }
-
 
     private void setBadge(MenuItem item, String text, int bgColor) {
         if (item == null) return;
@@ -256,30 +268,23 @@ public class InboxActivity extends AppCompatActivity {
                     JSONArray array = new JSONArray(json);
                     runOnUiThread(() -> {
                         Menu menu = navigationView.getMenu();
-
-                        // 🚫 Clear previous dynamic labels to avoid duplicates
                         menu.removeGroup(R.id.dynamic_labels_group);
-
-                        // Add each label to the correct group
                         for (int i = 0; i < array.length(); i++) {
                             try {
                                 JSONObject labelObj = array.getJSONObject(i);
                                 String label = labelObj.getString("name");
-
                                 MenuItem item = menu.add(R.id.dynamic_labels_group, Menu.NONE, Menu.NONE, label);
                                 item.setIcon(R.drawable.ic_label);
                                 item.setCheckable(true);
                             } catch (Exception e) {
-                                Log.e("Labels", "Error parsing label at index " + i + ": " + e.getMessage());
+                                Log.e("Labels", "Error parsing label: " + e.getMessage());
                             }
                         }
                     });
-
                 } catch (Exception e) {
                     Log.e("Labels", "Parse error: " + e.getMessage());
                 }
             }
         });
     }
-
 }
