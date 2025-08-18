@@ -1,7 +1,14 @@
-<resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
+<resources>
     <style name="Base.Theme.Gmailish" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Customize your dark theme here. -->
-        <!-- <item name="colorPrimary">@color/my_dark_primary</item> -->
+        <item name="android:statusBarColor">?attr/colorSurface</item>
+        <item name="android:windowLightStatusBar">false</item>
+
+        <!-- Night uses the same attribute names; colors come from values-night -->
+
+        <item name="colorSurfaceVariant">@color/app_surface_variant_light</item>
+        <item name="colorSurface">@color/app_surface_light</item>
+        <item name="colorOnSurface">@color/app_on_surface_light</item>
     </style>
+
+    <style name="Theme.Gmailish" parent="Base.Theme.Gmailish" />
 </resources>
