@@ -28,7 +28,6 @@ import okhttp3.Response;
 
 public class MailViewModel extends ViewModel {
 
-
     private static final String TAG = "MailVM";
 
     public MutableLiveData<String> errorMessage = new MutableLiveData<>();
@@ -37,7 +36,8 @@ public class MailViewModel extends ViewModel {
     private final OkHttpClient client = new OkHttpClient();
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
-    private List<JSONObject> userLabels = new ArrayList<>(); // 🔹 stores user-defined labels
+    private List<JSONObject> userLabels = new ArrayList<>(); // stores user-defined labels
+
     // Room repo and background executor for DB writes (called after server success)
     private MailRepository mailRepository; // initialized via init(context)
     private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
@@ -58,11 +58,11 @@ public class MailViewModel extends ViewModel {
     }
 
     private String normalizeLabel(String label) {
-        return label.equalsIgnoreCase("inbox") ? "primary" : label;
+        return label != null && label.equalsIgnoreCase("inbox") ? "primary" : label;
     }
 
     public void setUserLabels(List<JSONObject> labels) {
-        this.userLabels = labels;
+        this.userLabels = labels != null ? labels : new ArrayList<>();
     }
 
     public List<String> getUserLabelNames() {
@@ -71,6 +71,7 @@ public class MailViewModel extends ViewModel {
             names.add(label.optString("name"));
         }
         return names;
+    }
 
     private String getOwnerId(Context ctx) {
         if (cachedOwnerId != null) return cachedOwnerId;
@@ -118,7 +119,7 @@ public class MailViewModel extends ViewModel {
         Log.d(TAG, "toggleStar: mailId=" + mailId);
         Request request = new Request.Builder()
                 .url("http://10.0.2.2:3000/api/mails/" + mailId + "/star")
-                .patch(RequestBody.create("", null))
+                .patch(RequestBody.create(null, new byte[0])) // empty body
                 .header("Authorization", "Bearer " + jwtToken)
                 .build();
 

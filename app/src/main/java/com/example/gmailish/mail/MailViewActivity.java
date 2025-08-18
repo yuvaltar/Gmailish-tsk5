@@ -25,7 +25,6 @@ import java.util.Locale;
 
 public class MailViewActivity extends AppCompatActivity {
 
-
     private TextView senderText, recipientText, subjectText, contentText, timestampText, senderIcon;
     private ImageButton replyButton, forwardButton, starButton, deleteButton, archiveButton, menuButton, backButton;
     private MailViewModel viewModel;
@@ -80,7 +79,7 @@ public class MailViewActivity extends AppCompatActivity {
                 }
 
                 String senderName = mail.optString("senderName");
-                if (!senderName.isEmpty()) {
+                if (senderName != null && !senderName.isEmpty()) {
                     senderIcon.setText(senderName.substring(0, 1).toUpperCase());
                 }
 
@@ -103,7 +102,7 @@ public class MailViewActivity extends AppCompatActivity {
 
         starButton.setOnClickListener(v -> {
             boolean willBeStarred = !isStarred;
-            // supply context so VM can update Room
+            // supply context so VM can update Room after server success
             viewModel.addOrRemoveLabel(mailId, "starred", jwtToken, willBeStarred, getApplicationContext());
             isStarred = willBeStarred;
             updateStarIcon();
@@ -136,10 +135,8 @@ public class MailViewActivity extends AppCompatActivity {
         menuButton.setOnClickListener(v -> {
             PopupMenu popup = new PopupMenu(MailViewActivity.this, v);
             popup.getMenuInflater().inflate(R.menu.mail_options_menu, popup.getMenu());
-
             popup.setOnMenuItemClickListener(item -> {
                 int id = item.getItemId();
-
                 if (id == R.id.menu_move_to) {
                     showMoveToDialog();
                     return true;
@@ -154,15 +151,14 @@ public class MailViewActivity extends AppCompatActivity {
                     });
                     return true;
                 }
-
                 return false;
             });
-
             popup.show();
         });
     }
 
     private void updateStarIcon() {
+        // You may have a different filled/outline icon. Adjust as needed.
         starButton.setImageResource(isStarred ? R.drawable.ic_star : R.drawable.ic_star);
     }
 
@@ -171,7 +167,6 @@ public class MailViewActivity extends AppCompatActivity {
             runOnUiThread(onComplete);
             return;
         }
-
         String label = labels.get(index);
         viewModel.removeLabelWithCallback(mailId, label, jwtToken, () ->
                 removeLabelsSequentially(labels, index + 1, onComplete)
@@ -183,13 +178,12 @@ public class MailViewActivity extends AppCompatActivity {
             onComplete.run();
             return;
         }
-
         List<String> labelsToRemove = new ArrayList<>();
         for (int i = 0; i < currentLabels.length(); i++) {
             try {
                 String label = currentLabels.getString(i);
-                if (!label.equals("starred") && isInboxLabel(label)) {
-                    if (label.equalsIgnoreCase("inbox")) {
+                if (!"starred".equalsIgnoreCase(label) && isInboxLabel(label)) {
+                    if ("inbox".equalsIgnoreCase(label)) {
                         labelsToRemove.add("primary");
                     } else {
                         labelsToRemove.add(label);
@@ -199,14 +193,12 @@ public class MailViewActivity extends AppCompatActivity {
                 e.printStackTrace();
             }
         }
-
         removeLabelsSequentially(labelsToRemove, 0, onComplete);
     }
 
     private void showMoveToDialog() {
         String[] folderNames = {"Primary", "Promotions", "Social", "Updates", "Spam", "Trash", "Drafts", "Starred", "Important"};
         String[] labelValues = {"primary", "promotions", "social", "updates", "spam", "trash", "drafts", "starred", "important"};
-
         new AlertDialog.Builder(MailViewActivity.this)
                 .setTitle("Move to")
                 .setItems(folderNames, (dialog, which) -> {
@@ -226,14 +218,10 @@ public class MailViewActivity extends AppCompatActivity {
     private void showLabelAssignmentDialog() {
         List<String> options = new ArrayList<>();
         options.add("Add to new label");
-
         for (String name : viewModel.getUserLabelNames()) {
             options.add(name);
         }
-
-
         CharSequence[] choices = options.toArray(new CharSequence[0]);
-
         new AlertDialog.Builder(this)
                 .setTitle("Add to label")
                 .setItems(choices, (dialog, which) -> {
@@ -241,7 +229,8 @@ public class MailViewActivity extends AppCompatActivity {
                         showNewLabelInput();
                     } else {
                         String selectedLabel = options.get(which);
-                        viewModel.addLabel(mailId, selectedLabel, jwtToken);
+                        // IMPORTANT: addLabel requires Context as 4th arg
+                        viewModel.addLabel(mailId, selectedLabel, jwtToken, getApplicationContext());
                         Toast.makeText(this, "Added to " + selectedLabel, Toast.LENGTH_SHORT).show();
                     }
                 })
@@ -252,14 +241,14 @@ public class MailViewActivity extends AppCompatActivity {
     private void showNewLabelInput() {
         final EditText input = new EditText(this);
         input.setHint("Label name");
-
         new AlertDialog.Builder(this)
                 .setTitle("Create new label")
                 .setView(input)
                 .setPositiveButton("Create", (dialog, which) -> {
                     String newLabel = input.getText().toString().trim();
                     if (!newLabel.isEmpty()) {
-                        viewModel.addLabel(mailId, newLabel, jwtToken);
+                        // IMPORTANT: addLabel requires Context as 4th arg
+                        viewModel.addLabel(mailId, newLabel, jwtToken, getApplicationContext());
                         Toast.makeText(this, "Added to " + newLabel, Toast.LENGTH_SHORT).show();
                     } else {
                         Toast.makeText(this, "Label name cannot be empty", Toast.LENGTH_SHORT).show();
@@ -278,10 +267,9 @@ public class MailViewActivity extends AppCompatActivity {
     }
 
     // Helper: Formats ISO-8601 timestamps to "MMM d" without using java.time on API < 26.
-// Supports "2025-08-10T12:34:56Z" and offsets like "+02:00".
+    // Supports "2025-08-10T12:34:56Z" and offsets like "+02:00".
     private String formatIso8601ToMonthDay(String iso) throws Exception {
         if (iso == null || iso.isEmpty()) throw new IllegalArgumentException("empty timestamp");
-
         if (android.os.Build.VERSION.SDK_INT >= 26) {
             // Prefer modern API on newer devices
             java.time.OffsetDateTime odt = java.time.OffsetDateTime.parse(iso);
@@ -294,7 +282,6 @@ public class MailViewActivity extends AppCompatActivity {
             if (plus > 10 && iso.length() >= plus + 6 && iso.charAt(iso.length() - 3) == ':') {
                 normalized = iso.substring(0, iso.length() - 3) + iso.substring(iso.length() - 2);
             }
-
             // Choose pattern depending on presence of milliseconds and timezone
             boolean hasMillis = normalized.contains(".");
             boolean hasZone = normalized.endsWith("Z") || normalized.matches(".*[\\+\\-]\\d{4}$");
@@ -304,7 +291,6 @@ public class MailViewActivity extends AppCompatActivity {
             } else {
                 pattern = hasMillis ? "yyyy-MM-dd'T'HH:mm:ss.SSS" : "yyyy-MM-dd'T'HH:mm:ss";
             }
-
             java.text.SimpleDateFormat parser = new java.text.SimpleDateFormat(pattern, Locale.US);
             parser.setLenient(true);
             if (normalized.endsWith("Z")) {
