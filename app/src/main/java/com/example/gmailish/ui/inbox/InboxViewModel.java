@@ -34,6 +34,11 @@ public class InboxViewModel extends AndroidViewModel {
     private final OkHttpClient client = new OkHttpClient();
     private final MutableLiveData<User> currentUserLiveData = new MutableLiveData<>();
 
+    private static final java.util.Set<String> EXCLUDED_LABELS =
+            new java.util.HashSet<>(java.util.Arrays.asList(
+                    "sent", "drafts"
+            ));
+
     public InboxViewModel(Application application) {
         super(application);
     }
@@ -74,11 +79,13 @@ public class InboxViewModel extends AndroidViewModel {
                 .build();
 
         client.newCall(request).enqueue(new Callback() {
-            @Override public void onFailure(Call call, IOException e) {
+            @Override
+            public void onFailure(Call call, IOException e) {
                 Log.e(TAG, "CurrentUser network failure: " + e.getMessage());
             }
 
-            @Override public void onResponse(Call call, Response response) throws IOException {
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
                 try (Response r = response) {
                     if (!r.isSuccessful()) {
                         Log.e(TAG, "CurrentUser response error: code=" + r.code());
@@ -122,12 +129,14 @@ public class InboxViewModel extends AndroidViewModel {
                 .build();
 
         client.newCall(request).enqueue(new Callback() {
-            @Override public void onFailure(Call call, IOException e) {
+            @Override
+            public void onFailure(Call call, IOException e) {
                 Log.e(TAG, "loadEmails network error: " + e.getMessage());
                 errorLiveData.postValue("Network error: " + e.getMessage());
             }
 
-            @Override public void onResponse(Call call, Response response) throws IOException {
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
                 try (Response r = response) {
                     if (!r.isSuccessful()) {
                         Log.e(TAG, "loadEmails error code: " + r.code());
@@ -153,12 +162,14 @@ public class InboxViewModel extends AndroidViewModel {
                 .build();
 
         client.newCall(request).enqueue(new Callback() {
-            @Override public void onFailure(Call call, IOException e) {
+            @Override
+            public void onFailure(Call call, IOException e) {
                 Log.e(TAG, "Search network error: " + e.getMessage());
                 errorLiveData.postValue("Search error: " + e.getMessage());
             }
 
-            @Override public void onResponse(Call call, Response response) throws IOException {
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
                 try (Response r = response) {
                     if (!r.isSuccessful()) {
                         Log.e(TAG, "Search failed: code=" + r.code());
@@ -254,12 +265,14 @@ public class InboxViewModel extends AndroidViewModel {
                 .build();
 
         client.newCall(request).enqueue(new Callback() {
-            @Override public void onFailure(Call call, IOException e) {
+            @Override
+            public void onFailure(Call call, IOException e) {
                 Log.e(TAG, "Label '" + label + "' network error: " + e.getMessage());
                 errorLiveData.postValue("Failed to load '" + label + "': " + e.getMessage());
             }
 
-            @Override public void onResponse(Call call, Response response) throws IOException {
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
                 try (Response r = response) {
                     if (!r.isSuccessful()) {
                         Log.e(TAG, "Label '" + label + "' server error: " + r.code());
@@ -269,6 +282,100 @@ public class InboxViewModel extends AndroidViewModel {
                     List<Email> parsed = parseEmailList(r);
                     Log.d(TAG, "Label '" + label + "' parsed count=" + (parsed != null ? parsed.size() : -1));
                     if (parsed != null) emailsLiveData.postValue(parsed);
+                }
+            }
+        });
+    }
+
+    public void loadAllInboxes() {
+        errorLiveData.setValue(null);
+        String token = getJwtToken();
+        Log.d(TAG, "loadAllInboxes hasToken=" + (token != null));
+
+        if (token == null) {
+            errorLiveData.postValue("JWT token missing");
+            return;
+        }
+
+        Request request = new Request.Builder()
+                .url("http://10.0.2.2:3000/api/mails") // no label filter
+                .header("Authorization", "Bearer " + token)
+                .build();
+
+        client.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                Log.e(TAG, "loadAllInboxes network error: " + e.getMessage());
+                errorLiveData.postValue("Network error: " + e.getMessage());
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
+                try (Response r = response) {
+                    if (!r.isSuccessful()) {
+                        Log.e(TAG, "loadAllInboxes error: code=" + r.code());
+                        errorLiveData.postValue("Error code: " + r.code());
+                        return;
+                    }
+
+                    String body = r.body() != null ? r.body().string() : "[]";
+                    Log.d(TAG, "AllInboxes raw: " + body);
+
+                    List<Email> parsedEmails = new ArrayList<>();
+                    try {
+                        JSONArray arr = new JSONArray(body);
+                        for (int i = 0; i < arr.length(); i++) {
+                            JSONObject obj = arr.getJSONObject(i);
+
+                            // Check labels and exclude system buckets
+                            boolean exclude = false;
+                            JSONArray labels = obj.optJSONArray("labels");
+                            if (labels != null) {
+                                for (int j = 0; j < labels.length(); j++) {
+                                    String lb = labels.optString(j, "").toLowerCase();
+                                    if (EXCLUDED_LABELS.contains(lb)) {
+                                        exclude = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (exclude) continue;
+
+                            boolean isStarred = hasStarredLabel(obj);
+
+                            parsedEmails.add(new Email(
+                                    obj.optString("senderName"),
+                                    obj.optString("subject"),
+                                    obj.optString("content"),
+                                    obj.optString("timestamp"),
+                                    obj.optBoolean("read"),
+                                    isStarred,
+                                    obj.optString("id")
+                            ));
+                        }
+
+                        // Sort newest first. If your timestamp is millis, parse to long; if ISO-8601 strings, string compare often works.
+                        parsedEmails.sort((a, b) -> {
+                            String ta = a.timestamp, tb = b.timestamp;
+                            if (ta == null) ta = "";
+                            if (tb == null) tb = "";
+                            // try numeric (millis) first
+                            try {
+                                long la = Long.parseLong(ta);
+                                long lb = Long.parseLong(tb);
+                                return Long.compare(lb, la);
+                            } catch (NumberFormatException ignore) {
+                                return tb.compareTo(ta);
+                            }
+                        });
+
+                        Log.d(TAG, "AllInboxes parsed count=" + parsedEmails.size());
+                        emailsLiveData.postValue(parsedEmails);
+
+                    } catch (Exception e) {
+                        Log.e(TAG, "AllInboxes JSON parse error: " + e.getMessage());
+                        errorLiveData.postValue("JSON parse error: " + e.getMessage());
+                    }
                 }
             }
         });

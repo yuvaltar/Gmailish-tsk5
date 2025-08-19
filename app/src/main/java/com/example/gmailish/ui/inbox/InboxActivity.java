@@ -50,6 +50,8 @@ import okhttp3.Response;
 public class InboxActivity extends AppCompatActivity {
 
     private static final String TAG = "InboxActivity";
+    private static final String LABEL_ALL_INBOXES = "__ALL_INBOXES__";
+
     private static final String STATE_LABEL   = "state_label";
     private static final String STATE_CHECKED = "state_checked";
 
@@ -97,7 +99,11 @@ public class InboxActivity extends AppCompatActivity {
             currentLabel  = prefs.getString("last_label", "inbox");
             checkedMenuId = prefs.getInt("last_menu_id", R.id.nav_primary);
             navigationView.setCheckedItem(checkedMenuId);
-            viewModel.loadEmailsByLabel(currentLabel);
+            if (LABEL_ALL_INBOXES.equals(currentLabel)) {
+                viewModel.loadAllInboxes();
+            } else {
+                viewModel.loadEmailsByLabel(currentLabel);
+            }
         }
 
         // Status bar icon contrast based on theme
@@ -155,7 +161,13 @@ public class InboxActivity extends AppCompatActivity {
             drawerLayout.closeDrawer(GravityCompat.START);
 
             int id = menuItem.getItemId();
-            if (id == R.id.nav_primary) {
+            if (id == R.id.nav_all_inboxes) {
+                currentLabel = LABEL_ALL_INBOXES;
+                checkedMenuId = R.id.nav_all_inboxes;
+                persistSelection();
+                viewModel.loadAllInboxes();
+            }
+            else if (id == R.id.nav_primary) {
                 currentLabel = "inbox";
                 checkedMenuId = R.id.nav_primary;
                 persistSelection();
@@ -235,8 +247,11 @@ public class InboxActivity extends AppCompatActivity {
                 // Kick a sync from server (if your VM does that)
                 viewModel.loadEmails(token);
             }
-            // Then re-apply current label
-            viewModel.loadEmailsByLabel(currentLabel);
+            if (LABEL_ALL_INBOXES.equals(currentLabel)) {
+                viewModel.loadAllInboxes();
+            } else {
+                viewModel.loadEmailsByLabel(currentLabel);
+            }
         });
 
         // Observe emails: update list and stop spinner
