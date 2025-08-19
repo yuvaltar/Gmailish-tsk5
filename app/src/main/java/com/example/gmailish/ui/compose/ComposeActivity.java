@@ -24,7 +24,6 @@ import java.util.concurrent.Executors;
 
 public class ComposeActivity extends AppCompatActivity {
 
-
     private static final String TAG = "ComposeSave";
 
     private EditText toField, subjectField, bodyField;
@@ -42,12 +41,14 @@ public class ComposeActivity extends AppCompatActivity {
         sendButton = findViewById(R.id.sendButton);
         backButton = findViewById(R.id.backButton);
 
+        // Prefill from MailViewActivity (Reply/Forward)
+        applyPrefillFromExtras();
+
         SharedPreferences prefs = getSharedPreferences("prefs", MODE_PRIVATE);
         String token = prefs.getString("jwt", null);
         Log.d(TAG, "JWT token loaded: " + token);
 
         backButton.setOnClickListener(v -> finish());
-
 
         viewModel = new ViewModelProvider(this).get(ComposeViewModel.class);
 
@@ -123,7 +124,6 @@ public class ComposeActivity extends AppCompatActivity {
                     Log.d(TAG, "Prepared entities. senderId=" + senderMail.getId() +
                             ", recipientId=" + recipientMail.getId());
 
-                    // Save to Room on a background thread
                     Executors.newSingleThreadExecutor().execute(() -> {
                         try {
                             Log.d(TAG, "Opening DB singleton...");
@@ -134,10 +134,6 @@ public class ComposeActivity extends AppCompatActivity {
                             Log.d(TAG, "Saving mails...");
                             repo.saveMailsBlocking(Arrays.asList(senderMail, recipientMail));
                             Log.d(TAG, "Save completed.");
-
-                            // Optional quick verification count (add wrapper below if you want exact count)
-                            // Log.d(TAG, "Count after insert = " + repo.countMailsBlocking());
-
                         } catch (Throwable e) {
                             Log.e(TAG, "Room save error", e);
                         }
@@ -162,5 +158,56 @@ public class ComposeActivity extends AppCompatActivity {
                     ", len(content)=" + (content != null ? content.length() : 0));
             viewModel.sendEmail(to, subject, content, token);
         });
+    }
+
+    private void applyPrefillFromExtras() {
+        if (getIntent() == null) return;
+
+        String mode    = getIntent().getStringExtra("EXTRA_MODE");   // "reply" or "forward"
+        String to      = getIntent().getStringExtra("EXTRA_TO");
+        String subject = getIntent().getStringExtra("EXTRA_SUBJECT");
+        String body    = getIntent().getStringExtra("EXTRA_BODY");
+
+        // >>> FIX: ensure "to" is an email. If it's a plain name, append "@gmailish.com".
+        if (to != null && !to.isEmpty()) {
+            toField.setText(normalizeToEmail(to));
+        }
+        if (subject != null) subjectField.setText(subject);
+        if (body != null) bodyField.setText(body);
+
+        // Optional UX: focus the right field
+        if ("forward".equals(mode)) {
+            toField.requestFocus();          // user must choose a recipient
+        } else if ("reply".equals(mode)) {
+            bodyField.requestFocus();
+            bodyField.setSelection(bodyField.getText().length());
+        }
+    }
+
+    /**
+     * Convert various "to" values into an email form.
+     * - "Name <user@host>" -> "user@host"
+     * - already an email -> unchanged
+     * - plain name -> "name@gmailish.com"
+     */
+    private String normalizeToEmail(String raw) {
+        if (raw == null) return "";
+        String s = raw.trim();
+
+        // Case: "Name <email@host>"
+        int lt = s.indexOf('<');
+        int gt = s.indexOf('>');
+        if (lt >= 0 && gt > lt) {
+            String inside = s.substring(lt + 1, gt).trim();
+            if (inside.contains("@")) return inside;
+        }
+
+        // Already looks like an email
+        if (s.contains("@")) return s;
+
+        // Plain name -> sanitize lightly and append domain
+        String local = s.toLowerCase()
+                .replaceAll("\\s+", ".");        // spaces -> dots
+        return local + "@gmailish.com";
     }
 }
