@@ -51,6 +51,7 @@ public class InboxActivity extends AppCompatActivity {
 
     private static final String TAG = "InboxActivity";
     private static final String LABEL_ALL_INBOXES = "__ALL_INBOXES__";
+    private static final String KEY_ALL_INBOXES = "__ALL__";
 
     private static final String STATE_LABEL   = "state_label";
     private static final String STATE_CHECKED = "state_checked";
@@ -227,8 +228,41 @@ public class InboxActivity extends AppCompatActivity {
         setBadge(menu.findItem(R.id.nav_social), "27 new", 0xFFD5E4FF);
         setBadge(menu.findItem(R.id.nav_updates), "82 new", 0xFFFFE2CC);
 
+        viewModel.getUnreadCounts().observe(this, counts -> {
+            if (counts == null) return;
+
+            // All inboxes
+            Integer allC = counts.get(KEY_ALL_INBOXES);
+            setNumericBadge(menu.findItem(R.id.nav_all_inboxes), allC != null ? allC : 0, null);
+
+            // Static sections (map to your backend label names)
+            applyCount(menu.findItem(R.id.nav_primary),    counts.getOrDefault("inbox", 0));
+            applyCount(menu.findItem(R.id.nav_promotions), counts.getOrDefault("promotions", 0));
+            applyCount(menu.findItem(R.id.nav_social),     counts.getOrDefault("social", 0));
+            applyCount(menu.findItem(R.id.nav_updates),    counts.getOrDefault("updates", 0));
+
+            // System folders
+            applyCount(menu.findItem(R.id.nav_starred),   counts.getOrDefault("starred", 0));
+            applyCount(menu.findItem(R.id.nav_important), counts.getOrDefault("important", 0));
+            applyCount(menu.findItem(R.id.nav_sent),      counts.getOrDefault("sent", 0));
+            applyCount(menu.findItem(R.id.nav_drafts),    counts.getOrDefault("drafts", 0));
+            applyCount(menu.findItem(R.id.nav_spam),      counts.getOrDefault("spam", 0));
+            applyCount(menu.findItem(R.id.nav_trash),     counts.getOrDefault("trash", 0));
+
+            // Dynamic labels (group id: dynamic_labels_group)
+            for (int i = 0; i < menu.size(); i++) {
+                MenuItem it = menu.getItem(i);
+                if (it.getGroupId() == R.id.dynamic_labels_group) {
+                    String labelName = it.getTitle().toString().toLowerCase();
+                    int c = counts.getOrDefault(labelName, 0);
+                    setNumericBadge(it, c, null);
+                }
+            }
+        });
+
         // Dynamic labels
         loadUserLabels(navigationView);
+        viewModel.refreshUnreadCounts();
 
         // Recycler
         recyclerView = findViewById(R.id.inboxRecyclerView);
@@ -252,6 +286,7 @@ public class InboxActivity extends AppCompatActivity {
             } else {
                 viewModel.loadEmailsByLabel(currentLabel);
             }
+            viewModel.refreshUnreadCounts();
         });
 
         // Observe emails: update list and stop spinner
@@ -311,6 +346,7 @@ public class InboxActivity extends AppCompatActivity {
         // Rebuild dynamic labels (optional)
         NavigationView navigationView = findViewById(R.id.navigationView);
         loadUserLabels(navigationView);
+        viewModel.refreshUnreadCounts();
         // No auto reload of emails here to avoid stomping current filtered list
     }
 
@@ -373,6 +409,7 @@ public class InboxActivity extends AppCompatActivity {
                                 MenuItem item = menu.add(R.id.dynamic_labels_group, Menu.NONE, Menu.NONE, label);
                                 item.setIcon(R.drawable.ic_label);
                                 item.setCheckable(true);
+                                item.setActionView(R.layout.menu_badge);
                             } catch (Exception e) {
                                 Log.e("Labels", "Error parsing label: " + e.getMessage());
                             }
@@ -391,5 +428,33 @@ public class InboxActivity extends AppCompatActivity {
                 .putString("last_label", currentLabel)
                 .putInt("last_menu_id", checkedMenuId)
                 .apply();
+    }
+
+    private void setNumericBadge(MenuItem item, int count, Integer bgColorOrNull) {
+        if (item == null) return;
+
+        // Ensure the item has a TextView actionView
+        View v = item.getActionView();
+        TextView tv;
+        if (!(v instanceof TextView)) {
+            // Reuse your badge layout (must be a single TextView with background bubble)
+            item.setActionView(R.layout.menu_badge);
+            v = item.getActionView();
+        }
+        tv = (TextView) v;
+
+        if (count <= 0) {
+            tv.setVisibility(View.GONE);
+        } else {
+            tv.setText(String.valueOf(count));
+            if (bgColorOrNull != null) {
+                tv.getBackground().setTint(bgColorOrNull);
+            }
+            tv.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void applyCount(MenuItem item, int count) {
+        setNumericBadge(item, count, null);
     }
 }

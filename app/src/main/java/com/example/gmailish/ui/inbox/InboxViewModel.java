@@ -33,11 +33,15 @@ public class InboxViewModel extends AndroidViewModel {
     private final MutableLiveData<String> errorLiveData = new MutableLiveData<>();
     private final OkHttpClient client = new OkHttpClient();
     private final MutableLiveData<User> currentUserLiveData = new MutableLiveData<>();
+    private static final String KEY_ALL_INBOXES = "__ALL__";
+
 
     private static final java.util.Set<String> EXCLUDED_LABELS =
             new java.util.HashSet<>(java.util.Arrays.asList(
                     "sent", "drafts"
             ));
+    private final MutableLiveData<java.util.Map<String, Integer>> unreadCountsLiveData = new MutableLiveData<>();
+    public LiveData<java.util.Map<String, Integer>> getUnreadCounts() { return unreadCountsLiveData; }
 
     public InboxViewModel(Application application) {
         super(application);
@@ -65,6 +69,78 @@ public class InboxViewModel extends AndroidViewModel {
             }
         }
         return false;
+    }
+
+    public void refreshUnreadCounts() {
+        String token = getJwtToken();
+        if (token == null) {
+            errorLiveData.postValue("JWT token missing");
+            return;
+        }
+        Request request = new Request.Builder()
+                .url("http://10.0.2.2:3000/api/mails") // get all and aggregate
+                .header("Authorization", "Bearer " + token)
+                .build();
+
+        client.newCall(request).enqueue(new Callback() {
+            @Override public void onFailure(Call call, IOException e) {
+                Log.e(TAG, "refreshUnreadCounts network error: " + e.getMessage());
+            }
+
+            @Override public void onResponse(Call call, Response response) throws IOException {
+                try (Response r = response) {
+                    if (!r.isSuccessful()) {
+                        Log.e(TAG, "refreshUnreadCounts error code: " + r.code());
+                        return;
+                    }
+                    String body = r.body() != null ? r.body().string() : "[]";
+                    JSONArray arr = new JSONArray(body);
+
+                    // label -> unread count
+                    java.util.Map<String, Integer> counts = new java.util.HashMap<>();
+                    int allInboxesUnread = 0;
+
+                    for (int i = 0; i < arr.length(); i++) {
+                        JSONObject obj = arr.getJSONObject(i);
+                        boolean read = obj.optBoolean("read", false);
+                        if (read) continue;
+
+                        JSONArray labels = obj.optJSONArray("labels");
+                        // If a mail has no labels, treat as inbox/primary if that matches your backend semantics
+                        if (labels == null || labels.length() == 0) {
+                            // count toward inbox + all
+                            counts.put("inbox", counts.getOrDefault("inbox", 0) + 1);
+                            // for All inboxes, exclude system buckets
+                            allInboxesUnread += 1;
+                            continue;
+                        }
+
+                        boolean excluded = false;
+                        java.util.Set<String> perMailLabels = new java.util.HashSet<>();
+                        for (int j = 0; j < labels.length(); j++) {
+                            String lb = labels.optString(j, "").toLowerCase();
+                            perMailLabels.add(lb);
+                            if (EXCLUDED_LABELS.contains(lb)) excluded = true;
+                        }
+
+                        // Increment each label’s count (one mail can belong to multiple labels)
+                        for (String lb : perMailLabels) {
+                            counts.put(lb, counts.getOrDefault(lb, 0) + 1);
+                        }
+
+                        // Add to “All inboxes” iff not in excluded bucket
+                        if (!excluded) {
+                            allInboxesUnread += 1;
+                        }
+                    }
+
+                    counts.put(KEY_ALL_INBOXES, allInboxesUnread);
+                    unreadCountsLiveData.postValue(counts);
+                } catch (Exception e) {
+                    Log.e(TAG, "refreshUnreadCounts parse error: " + e.getMessage());
+                }
+            }
+        });
     }
 
     // ---- API calls ----
