@@ -1,10 +1,13 @@
 package com.example.gmailish.mail;
 
 import android.app.AlertDialog;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.view.View;
 import android.widget.EditText;
 import android.widget.ImageButton;
+import android.widget.LinearLayout;
 import android.widget.PopupMenu;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -27,16 +30,29 @@ import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
+import okhttp3.Call;
+import okhttp3.Callback;
+import okhttp3.Response;
 
+/**
+ * MailViewActivity – reply now fills the real sender email and the reply/forward boxes are clickable.
+ */
 public class MailViewActivity extends AppCompatActivity {
 
     private TextView senderText, recipientText, subjectText, contentText, timestampText, senderIcon;
     private ImageButton replyButton, forwardButton, starButton, deleteButton, archiveButton, menuButton, backButton;
+
+    // NEW: containers for whole boxes
+    private LinearLayout replyBox, forwardBox;
+
     private MailViewModel viewModel;
     private String mailId;
     private boolean isStarred;
     private String jwtToken;
-    private JSONArray currentLabels; // from /mails/:id
+
+    private JSONArray currentLabels;   // from /mails/:id
+    private JSONObject currentMail;    // keep whole mail for reply/forward
+
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
     @Override
@@ -44,12 +60,12 @@ public class MailViewActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_mail_view);
 
-        senderText = findViewById(R.id.senderText);
+        senderText    = findViewById(R.id.senderText);
         recipientText = findViewById(R.id.recipientText);
-        subjectText = findViewById(R.id.subjectText);
-        contentText = findViewById(R.id.contentText);
+        subjectText   = findViewById(R.id.subjectText);
+        contentText   = findViewById(R.id.contentText);
         timestampText = findViewById(R.id.timestampText);
-        senderIcon = findViewById(R.id.senderIcon);
+        senderIcon    = findViewById(R.id.senderIcon);
 
         replyButton   = findViewById(R.id.replyButton);
         forwardButton = findViewById(R.id.forwardButton);
@@ -59,6 +75,10 @@ public class MailViewActivity extends AppCompatActivity {
         menuButton    = findViewById(R.id.menuButton);
         backButton    = findViewById(R.id.backButton);
 
+        // NEW: grab the whole clickable boxes
+        replyBox      = findViewById(R.id.replyBox);
+        forwardBox    = findViewById(R.id.forwardBox);
+
         viewModel = new ViewModelProvider(this).get(MailViewModel.class);
         viewModel.init(getApplicationContext());
 
@@ -66,10 +86,12 @@ public class MailViewActivity extends AppCompatActivity {
         jwtToken = prefs.getString("jwt", null);
         mailId   = getIntent().getStringExtra("mailId");
 
-        preloadUserLabelsFromPrefs(); // lets us show labels instantly
+        preloadUserLabelsFromPrefs();
 
         viewModel.mailData.observe(this, mail -> {
             if (mail == null) return;
+
+            currentMail = mail;
 
             senderText.setText(mail.optString("senderName"));
             recipientText.setText("To: " + mail.optString("recipientName") + " <" + mail.optString("recipientEmail") + ">");
@@ -86,7 +108,7 @@ public class MailViewActivity extends AppCompatActivity {
             }
 
             currentLabels = mail.optJSONArray("labels");
-            isStarred = currentLabels != null && currentLabels.toString().toLowerCase().contains("starred");
+            isStarred = currentLabels != null && currentLabels.toString().toLowerCase(Locale.ROOT).contains("starred");
             updateStarIcon();
         });
 
@@ -96,11 +118,17 @@ public class MailViewActivity extends AppCompatActivity {
         viewModel.fetchMailById(mailId, jwtToken);
         viewModel.markAsRead(mailId, jwtToken);
 
-        replyButton.setOnClickListener(v ->
-                Toast.makeText(this, "Reply (not implemented yet)", Toast.LENGTH_SHORT).show());
+        /* ----------------- Reply / Forward ----------------- */
 
-        forwardButton.setOnClickListener(v ->
-                Toast.makeText(this, "Forward (not implemented yet)", Toast.LENGTH_SHORT).show());
+        // Icon clicks:
+        replyButton.setOnClickListener(v -> replyToSender());
+        forwardButton.setOnClickListener(v -> openForward());
+
+        // NEW: whole-box clicks (same actions):
+        replyBox.setOnClickListener(v -> replyToSender());
+        forwardBox.setOnClickListener(v -> openForward());
+
+        /* --------------------------------------------------- */
 
         starButton.setOnClickListener(v -> {
             boolean willBeStarred = !isStarred;
@@ -134,7 +162,7 @@ public class MailViewActivity extends AppCompatActivity {
                     showMoveToDialog();
                     return true;
                 } else if (id == R.id.menu_label_as) {
-                    showLabelPickerWithChecks();   // ← NEW: checkbox picker
+                    showLabelPickerWithChecks();
                     return true;
                 } else if (id == R.id.menu_report_spam) {
                     removeAllInboxLabels(() -> {
@@ -150,38 +178,178 @@ public class MailViewActivity extends AppCompatActivity {
         });
     }
 
-    /* ---------- Label picker with checkboxes ---------- */
+    /* ================= Reply helpers ================= */
+
+    private void openForward() {
+        if (currentMail == null) return;
+        Intent i = new Intent(this, com.example.gmailish.ui.compose.ComposeActivity.class);
+        i.putExtra("EXTRA_MODE", "forward");
+        i.putExtra("EXTRA_SUBJECT", prefixIfNeeded(subjectText.getText().toString(), "Fwd: "));
+        i.putExtra("EXTRA_BODY", buildForwardBody()); // leave To empty
+        startActivity(i);
+    }
+
+    private void replyToSender() {
+        if (currentMail == null) return;
+
+        // 1) Try to extract directly from the message JSON
+        String email = extractSenderEmail(currentMail);
+        if (!email.isEmpty()) {
+            openComposeReply(email);
+            return;
+        }
+
+        // 2) Try to resolve by senderId from the API
+        String senderId = currentMail.optString("senderId", "");
+        if (!senderId.isEmpty()) {
+            resolveSenderEmailFromServer(senderId, resolved -> {
+                String finalEmail = (resolved != null && !resolved.isEmpty())
+                        ? resolved
+                        : fallbackEmailFromName(currentMail); // 3) fallback to name@gmailish.com
+                if (finalEmail.isEmpty()) {
+                    Toast.makeText(this, "Sender email unavailable", Toast.LENGTH_SHORT).show();
+                } else {
+                    openComposeReply(finalEmail);
+                }
+            });
+            return;
+        }
+
+        // 3) No senderId? just fallback to name@gmailish.com
+        String fb = fallbackEmailFromName(currentMail);
+        if (fb.isEmpty()) {
+            Toast.makeText(this, "Sender email unavailable", Toast.LENGTH_SHORT).show();
+        } else {
+            openComposeReply(fb);
+        }
+    }
+
+    private void openComposeReply(String email) {
+        Intent i = new Intent(this, com.example.gmailish.ui.compose.ComposeActivity.class);
+        i.putExtra("EXTRA_MODE", "reply");
+        i.putExtra("EXTRA_TO", email); // <-- email only
+        i.putExtra("EXTRA_SUBJECT", prefixIfNeeded(subjectText.getText().toString(), "Re: "));
+        startActivity(i);
+    }
+
+    /** Pull the best candidate email out of the message JSON (no fallbacks). */
+    private String extractSenderEmail(JSONObject mail) {
+        String[] fields = new String[] {
+                "senderEmail", "fromEmail", "emailFrom", "replyTo", "from_address"
+        };
+        for (String f : fields) {
+            String v = mail.optString(f, "");
+            if (containsEmail(v)) return stripAngle(v);
+        }
+        // Common combined header e.g. "Name <user@host>"
+        String[] combo = new String[] { "from", "sender", "senderDisplay" };
+        for (String f : combo) {
+            String v = mail.optString(f, "");
+            if (containsEmail(v)) return stripAngle(v);
+        }
+        return "";
+    }
+
+    /** GET /api/users/{senderId} -> use 'email' (fallback 'username'). */
+    private void resolveSenderEmailFromServer(String senderId, EmailResolver cb) {
+        try {
+            SharedPreferences p = getSharedPreferences("prefs", MODE_PRIVATE);
+            String token = p.getString("jwt", null);
+            if (token == null) { cb.onResolved(""); return; }
+
+            Request req = new Request.Builder()
+                    .url("http://10.0.2.2:3000/api/users/" + senderId)
+                    .header("Authorization", "Bearer " + token)
+                    .build();
+
+            new OkHttpClient().newCall(req).enqueue(new Callback() {
+                @Override public void onFailure(Call call, java.io.IOException e) {
+                    runOnUiThread(() -> cb.onResolved(""));
+                }
+                @Override public void onResponse(Call call, Response response) throws java.io.IOException {
+                    String body = response.body() != null ? response.body().string() : "";
+                    response.close();
+                    String out = "";
+                    try {
+                        JSONObject o = new JSONObject(body);
+                        String email = o.optString("email", "");
+                        String username = o.optString("username", "");
+                        if (containsEmail(email)) out = email;
+                        else if (!username.isEmpty()) out = username; // last resort
+                    } catch (Exception ignored) {}
+                    final String finalOut = out;
+                    runOnUiThread(() -> cb.onResolved(finalOut));
+                }
+            });
+        } catch (Exception e) {
+            cb.onResolved("");
+        }
+    }
+
+    /** Make an email from the best name/username we can find, like "yuvaltest@gmailish.com". */
+    private String fallbackEmailFromName(JSONObject mail) {
+        String name = firstNonEmpty(
+                mail.optString("senderUsername", ""),
+                mail.optString("senderName", ""),
+                mail.optString("sender", "")
+        );
+        if (name == null) name = "";
+        if (containsEmail(name)) return stripAngle(name);
+
+        String local = name.trim().toLowerCase(Locale.ROOT)
+                .replaceAll("\\s+", ".")        // spaces -> dots
+                .replaceAll("[^a-z0-9._-]", ""); // drop anything unsafe
+        if (local.isEmpty()) return "";
+        return local + "@gmailish.com";
+    }
+
+    private String firstNonEmpty(String... vals) {
+        for (String v : vals) if (v != null && !v.trim().isEmpty()) return v.trim();
+        return "";
+    }
+
+    private interface EmailResolver { void onResolved(String email); }
+
+    private boolean containsEmail(String s) {
+        return s != null && s.contains("@") && s.indexOf('@') > 0;
+    }
+    private String stripAngle(String s) {
+        if (s == null) return "";
+        int lt = s.indexOf('<'), gt = s.indexOf('>');
+        if (lt >= 0 && gt > lt) return s.substring(lt + 1, gt).trim();
+        return s.trim();
+    }
+    private String prefixIfNeeded(String subject, String prefix) {
+        if (subject == null) subject = "";
+        String p = prefix.trim().toLowerCase(Locale.ROOT);
+        return subject.toLowerCase(Locale.ROOT).startsWith(p) ? subject : prefix + subject;
+    }
+    private String buildForwardBody() {
+        CharSequence cs = contentText.getText();
+        return cs != null ? cs.toString() : "";
+    }
+
+    /* ================= Label picker etc. (unchanged) ================= */
 
     private void showLabelPickerWithChecks() {
-        // Build the list of user labels
         List<String> labels = viewModel.getUserLabelNames();
         if (labels == null) labels = new ArrayList<>();
         final String[] items = labels.toArray(new String[0]);
 
-        // Current check state (pre-check labels already on this mail)
         final boolean[] checked = new boolean[items.length];
-        for (int i = 0; i < items.length; i++) {
-            checked[i] = hasLabelApplied(items[i]);
-        }
-        // Keep a copy to compute diffs at the end
+        for (int i = 0; i < items.length; i++) checked[i] = hasLabelApplied(items[i]);
         final boolean[] original = checked.clone();
 
         AlertDialog.Builder b = new AlertDialog.Builder(this)
                 .setTitle("Label")
-                .setMultiChoiceItems(items, checked, (dialog, which, isChecked) -> {
-                    checked[which] = isChecked;
-                })
+                .setMultiChoiceItems(items, checked, (dialog, which, isChecked) -> checked[which] = isChecked)
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Done", (dialog, which) -> {
-                    // Diff & apply changes sequentially
                     List<Toggle> ops = new ArrayList<>();
                     for (int i = 0; i < items.length; i++) {
-                        if (checked[i] != original[i]) {
-                            ops.add(new Toggle(items[i], checked[i])); // true = add, false = remove
-                        }
+                        if (checked[i] != original[i]) ops.add(new Toggle(items[i], checked[i]));
                     }
-                    if (ops.isEmpty()) return;
-                    applyTogglesSequentially(ops, 0);
+                    if (!ops.isEmpty()) applyTogglesSequentially(ops, 0);
                 })
                 .setNeutralButton("New label", (d, w) -> promptNewLabelAndReopen());
         b.show();
@@ -193,7 +361,6 @@ public class MailViewActivity extends AppCompatActivity {
             String s = currentLabels.optString(i, "");
             if (s.equalsIgnoreCase(label)) return true;
         }
-        // “inbox” normalization
         if ("primary".equalsIgnoreCase(label)) {
             for (int i = 0; i < currentLabels.length(); i++) {
                 if ("inbox".equalsIgnoreCase(currentLabels.optString(i))) return true;
@@ -202,25 +369,17 @@ public class MailViewActivity extends AppCompatActivity {
         return false;
     }
 
-    private static class Toggle {
-        final String label; final boolean add;
-        Toggle(String l, boolean a) { label = l; add = a; }
-    }
+    private static class Toggle { final String label; final boolean add; Toggle(String l, boolean a){label=l;add=a;} }
 
     private void applyTogglesSequentially(List<Toggle> ops, int i) {
         if (i >= ops.size()) {
             Toast.makeText(this, "Labels updated", Toast.LENGTH_SHORT).show();
-            // Refresh mail from server to get updated label list
             viewModel.fetchMailById(mailId, jwtToken);
             return;
         }
         Toggle t = ops.get(i);
-        if (t.add) {
-            viewModel.addLabel(mailId, t.label, jwtToken, getApplicationContext());
-        } else {
-            viewModel.removeLabel(mailId, t.label, jwtToken, getApplicationContext());
-        }
-        // Chain next op after a tiny delay to avoid hammering server (optional)
+        if (t.add) viewModel.addLabel(mailId, t.label, jwtToken, getApplicationContext());
+        else       viewModel.removeLabel(mailId, t.label, jwtToken, getApplicationContext());
         senderIcon.postDelayed(() -> applyTogglesSequentially(ops, i + 1), 40);
     }
 
@@ -233,15 +392,9 @@ public class MailViewActivity extends AppCompatActivity {
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Create", (d, w) -> {
                     String name = input.getText().toString().trim();
-                    if (name.isEmpty()) {
-                        Toast.makeText(this, "Label name cannot be empty", Toast.LENGTH_SHORT).show();
-                        return;
-                    }
+                    if (name.isEmpty()) { Toast.makeText(this, "Label name cannot be empty", Toast.LENGTH_SHORT).show(); return; }
                     createLabelOnServer(name, () -> {
-                        // Cache it locally so it appears next time
                         cacheLabelName(name);
-                        // Re-open picker and pre-select the new label
-                        // (also apply the label to this mail right away)
                         viewModel.addLabel(mailId, name, jwtToken, getApplicationContext());
                         showLabelPickerWithChecks();
                     });
@@ -258,12 +411,11 @@ public class MailViewActivity extends AppCompatActivity {
                     .post(body)
                     .header("Authorization", "Bearer " + jwtToken)
                     .build();
-            new OkHttpClient().newCall(req).enqueue(new okhttp3.Callback() {
-                @Override public void onFailure(okhttp3.Call call, java.io.IOException e) {
-                    runOnUiThread(() -> Toast.makeText(MailViewActivity.this,
-                            "Create label failed: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+            new OkHttpClient().newCall(req).enqueue(new Callback() {
+                @Override public void onFailure(Call call, java.io.IOException e) {
+                    runOnUiThread(() -> Toast.makeText(MailViewActivity.this,"Create label failed: " + e.getMessage(), Toast.LENGTH_SHORT).show());
                 }
-                @Override public void onResponse(okhttp3.Call call, okhttp3.Response response) {
+                @Override public void onResponse(Call call, Response response) throws java.io.IOException {
                     response.close();
                     runOnUiThread(onOk);
                 }
@@ -279,25 +431,18 @@ public class MailViewActivity extends AppCompatActivity {
             String s = p.getString("cached_label_names", "[]");
             JSONArray arr = new JSONArray(s);
             boolean exists = false;
-            for (int i = 0; i < arr.length(); i++) {
-                if (name.equalsIgnoreCase(arr.optString(i))) { exists = true; break; }
-            }
+            for (int i = 0; i < arr.length(); i++) if (name.equalsIgnoreCase(arr.optString(i))) { exists = true; break; }
             if (!exists) {
                 arr.put(name);
                 p.edit().putString("cached_label_names", arr.toString()).apply();
-                // push into VM cache too
                 List<JSONObject> raw = new ArrayList<>();
-                for (int i = 0; i < arr.length(); i++) {
-                    JSONObject o = new JSONObject();
-                    o.put("name", arr.optString(i));
-                    raw.add(o);
-                }
+                for (int i = 0; i < arr.length(); i++) raw.add(new JSONObject().put("name", arr.optString(i)));
                 viewModel.setUserLabels(raw);
             }
         } catch (Exception ignored) {}
     }
 
-    /* ---------- Existing helpers (unchanged) ---------- */
+    /* ================= Misc helpers ================= */
 
     private void updateStarIcon() {
         starButton.setImageResource(isStarred ? R.drawable.ic_star_shine : R.drawable.ic_star);
@@ -377,10 +522,11 @@ public class MailViewActivity extends AppCompatActivity {
             }
             boolean hasMillis = normalized.contains(".");
             boolean hasZone = normalized.endsWith("Z") || normalized.matches(".*[\\+\\-]\\d{4}$");
-            String pattern = hasZone
-                    ? (hasMillis ? "yyyy-MM-dd'T'HH:mm:ss.SSSZ" : "yyyy-MM-dd'T'HH:mm:ssZ")
-                    : (hasMillis ? "yyyy-MM-dd'T'HH:mm:ss.SSS" : "yyyy-MM-dd'T'HH:mm:ss");
-            java.text.SimpleDateFormat parser = new java.text.SimpleDateFormat(pattern, Locale.US);
+            java.text.SimpleDateFormat parser = new java.text.SimpleDateFormat(
+                    hasZone ? (hasMillis ? "yyyy-MM-dd'T'HH:mm:ss.SSSZ" : "yyyy-MM-dd'T'HH:mm:ssZ")
+                            : (hasMillis ? "yyyy-MM-dd'T'HH:mm:ss.SSS" : "yyyy-MM-dd'T'HH:mm:ss"),
+                    Locale.US
+            );
             parser.setLenient(true);
             if (normalized.endsWith("Z")) parser.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
             Date date = parser.parse(normalized);

@@ -3,6 +3,7 @@ package com.example.gmailish.ui.inbox;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.os.Build;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -19,8 +20,16 @@ import com.example.gmailish.model.Email;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -78,7 +87,10 @@ public class EmailAdapter extends RecyclerView.Adapter<EmailAdapter.EmailViewHol
         holder.sender.setText(senderName);
         holder.subject.setText(email.subject != null ? email.subject : "");
         holder.content.setText(email.content != null ? email.content : "");
-        holder.timestamp.setText(email.timestamp != null ? email.timestamp : "");
+
+        // Format timestamp: today -> HH:mm, else -> MMM d
+        String prettyTs = formatListTimestamp(email.timestamp);
+        holder.timestamp.setText(prettyTs);
 
         // First letter avatar
         holder.senderIcon.setText(senderName.isEmpty()
@@ -155,5 +167,64 @@ public class EmailAdapter extends RecyclerView.Adapter<EmailAdapter.EmailViewHol
                 }
             });
         } catch (Exception ignored) {}
+    }
+
+    /* =========================
+       Timestamp formatting
+       ========================= */
+
+    private String formatListTimestamp(String raw) {
+        if (raw == null || raw.isEmpty()) return "";
+        try {
+            if (Build.VERSION.SDK_INT >= 26) {
+                // ISO-8601 → ZonedDateTime in local zone
+                OffsetDateTime odt = OffsetDateTime.parse(raw);
+                ZonedDateTime zdt = odt.atZoneSameInstant(ZoneId.systemDefault());
+
+                boolean isToday = zdt.toLocalDate().isEqual(java.time.LocalDate.now(ZoneId.systemDefault()));
+                DateTimeFormatter fmt = DateTimeFormatter.ofPattern(isToday ? "HH:mm" : "MMM d", Locale.getDefault());
+                return zdt.format(fmt);
+            } else {
+                // Fallback parser tolerant to: Z or ±hh:mm, with/without millis
+                Date date = parseLegacyIso(raw);
+                if (date == null) return raw;
+
+                java.util.Calendar cal = java.util.Calendar.getInstance();
+                cal.setTime(date);
+
+                java.util.Calendar now = java.util.Calendar.getInstance();
+                boolean isToday =
+                        cal.get(java.util.Calendar.YEAR) == now.get(java.util.Calendar.YEAR) &&
+                                cal.get(java.util.Calendar.DAY_OF_YEAR) == now.get(java.util.Calendar.DAY_OF_YEAR);
+
+                return new SimpleDateFormat(isToday ? "HH:mm" : "MMM d", Locale.getDefault()).format(date);
+            }
+        } catch (Throwable t) {
+            return raw; // if anything fails, show raw string
+        }
+    }
+
+    private Date parseLegacyIso(String iso) {
+        try {
+            String normalized = iso;
+            int plus = Math.max(iso.lastIndexOf('+'), iso.lastIndexOf('-'));
+            if (plus > 10 && iso.length() >= plus + 6 && iso.charAt(iso.length() - 3) == ':') {
+                // "+02:00" -> "+0200"
+                normalized = iso.substring(0, iso.length() - 3) + iso.substring(iso.length() - 2);
+            }
+            boolean hasMillis = normalized.contains(".");
+            boolean hasZone = normalized.endsWith("Z") || normalized.matches(".*[\\+\\-]\\d{4}$");
+            String pattern = hasZone
+                    ? (hasMillis ? "yyyy-MM-dd'T'HH:mm:ss.SSSZ" : "yyyy-MM-dd'T'HH:mm:ssZ")
+                    : (hasMillis ? "yyyy-MM-dd'T'HH:mm:ss.SSS" : "yyyy-MM-dd'T'HH:mm:ss");
+            SimpleDateFormat parser = new SimpleDateFormat(pattern, Locale.US);
+            parser.setLenient(true);
+            if (normalized.endsWith("Z")) {
+                parser.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+            }
+            return parser.parse(normalized);
+        } catch (ParseException e) {
+            return null;
+        }
     }
 }
