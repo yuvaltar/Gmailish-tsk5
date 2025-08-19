@@ -110,16 +110,22 @@
         </LinearLayout>
 
         <!-- Email List (Full Screen like Gmail) -->
+        <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+            android:id="@+id/swipeRefresh"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_below="@id/topAppBar"
+            android:layout_above="@id/bottomActionBar">
+
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/inboxRecyclerView"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:layout_below="@id/topAppBar"
-            android:layout_above="@id/bottomActionBar"
             android:background="?attr/colorSurface"
             android:clipToPadding="false"
             android:paddingTop="4dp"
             android:paddingBottom="4dp" />
+        </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
         <!-- Bottom Action Bar with BOTH buttons -->
         <LinearLayout
@@ -132,23 +138,6 @@
             android:padding="16dp"
             android:background="@drawable/bottom_bar_background"
             android:elevation="8dp">
-
-            <!-- Refresh Button (Login Activity Style) -->
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/refreshButton"
-                style="@style/Widget.Material3.Button.TextButton"
-                android:layout_width="0dp"
-                android:layout_height="56dp"
-                android:layout_weight="1"
-                android:layout_marginEnd="8dp"
-                android:text="Refresh"
-                android:textColor="#4285F4"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:fontFamily="sans-serif-medium"
-                app:cornerRadius="16dp"
-                app:strokeColor="#4285F4"
-                app:strokeWidth="1dp" />
 
             <!-- Compose Button (Login Activity Style) -->
             <com.google.android.material.button.MaterialButton

@@ -26,6 +26,7 @@ import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import com.example.gmailish.R;
 import com.example.gmailish.ui.HeaderManager;
@@ -55,7 +56,7 @@ public class InboxActivity extends AppCompatActivity {
     private RecyclerView recyclerView;
     private EmailAdapter adapter;
     private MaterialButton composeButton;
-    private MaterialButton refreshButton;
+    private SwipeRefreshLayout swipeRefresh;
     private DrawerLayout drawerLayout;
     private ActionBarDrawerToggle toggle;
     private ImageView avatarImageView;
@@ -223,22 +224,30 @@ public class InboxActivity extends AppCompatActivity {
         adapter = new EmailAdapter();
         recyclerView.setAdapter(adapter);
 
+        swipeRefresh = findViewById(R.id.swipeRefresh);
+        swipeRefresh.setOnRefreshListener(() -> {
+            // Refresh the list the user is currently looking at
+            // If you want a server sync first:
+            SharedPreferences prefs = getSharedPreferences("prefs", MODE_PRIVATE);
+            String token = prefs.getString("jwt", null);
+            if (token != null) {
+                // Kick a sync from server (if your VM does that)
+                viewModel.loadEmails(token);
+            }
+            // Then re-apply current label
+            viewModel.loadEmailsByLabel(currentLabel);
+        });
+
+        // Observe emails: update list and stop spinner
+        viewModel.getEmails().observe(this, emails -> {
+            adapter.updateData(emails);
+            if (swipeRefresh.isRefreshing()) swipeRefresh.setRefreshing(false);
+        });
+
         // Compose & Refresh
         composeButton = findViewById(R.id.composeButton);
         composeButton.setOnClickListener(v ->
                 startActivity(new Intent(this, ComposeActivity.class)));
-
-        refreshButton = findViewById(R.id.refreshButton);
-        refreshButton.setOnClickListener(v -> {
-            SharedPreferences prefs = getSharedPreferences("prefs", MODE_PRIVATE);
-            String token = prefs.getString("jwt", null);
-            if (token != null) {
-                viewModel.loadEmails(token);
-                Toast.makeText(this, "Refreshing emails...", Toast.LENGTH_SHORT).show();
-            } else {
-                Toast.makeText(this, "Please sign in again", Toast.LENGTH_SHORT).show();
-            }
-        });
 
         // Search
         EditText searchBar = findViewById(R.id.searchBar);
@@ -252,8 +261,8 @@ public class InboxActivity extends AppCompatActivity {
         });
 
         // Observe VM
-        viewModel.getEmails().observe(this, adapter::updateData);
         viewModel.getError().observe(this, msg -> {
+            if (swipeRefresh.isRefreshing()) swipeRefresh.setRefreshing(false);
             if (msg != null && !msg.isEmpty()) {
                 Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
             }

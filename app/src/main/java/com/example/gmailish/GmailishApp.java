@@ -11,6 +11,5 @@ public class GmailishApp extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
-        ThemeManager.applySaved(this); // apply last chosen theme on app start
     }
 }
