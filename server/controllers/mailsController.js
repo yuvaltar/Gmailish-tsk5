@@ -1,15 +1,50 @@
 // server/controllers/mailsController.js
 
-const mailsService        = require('../services/mail');
-const Mail                = require('../models/mail');
+const mailsService = require('../services/mail');
+const Mail         = require('../models/mail');
 const {
   isBlacklisted,
   addUrl,
-  removeUrl
+  removeUrl,
 } = require('../services/blacklistService');
 
-const URL_REGEX = /(?:(?:file:\/\/(?:[A-Za-z]:)?(?:\/[^s]*)?)|(?:[A-Za-z][A-Za-z0-9+\-\.]*:\/\/)?(?:localhost|(?:[A-Za-z0-9\-]+\.)+[A-Za-z0-9\-]+|(?:\d{1,3}\.){3}\d{1,3})(?::\d+)?(?:\/[^s]*)?)/g;
-const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+// Simple, robust URL regex that also matches "www.example.com"
+const URL_REGEX = /\b(https?:\/\/[^\s"'<>()]+|www\.[^\s"'<>()]+)\b/gi;
+
+// Labels we consider “inbox-like” and must be dropped when spam is applied
+const INBOX_LIKE = new Set([
+  'primary', 'inbox', 'promotions', 'social', 'updates',
+  'important', 'archive', 'sent', 'drafts'
+]);
+
+// --- helpers ---------------------------------------------------------------
+
+// Extract and normalize URLs from arbitrary text
+function extractUrls(text) {
+  if (!text || typeof text !== 'string') return [];
+  const found = text.match(URL_REGEX) || [];
+
+  // Normalize & trim common trailing punctuation
+  const cleaned = found
+    .map(u => u.replace(/[),.;!?]+$/, ''))        // strip trailing , . ; ! ?
+    .map(u => (u.startsWith('www.') ? `http://${u}` : u)); // normalize bare www.
+
+  // De-duplicate
+  return [...new Set(cleaned)];
+}
+
+// Check if any extracted URL is currently blacklisted
+async function containsBlacklistedUrl(text) {
+  const urls = extractUrls(text);
+  for (const url of urls) {
+    if (await isBlacklisted(url)) {
+      return { blacklisted: true, url };
+    }
+  }
+  return { blacklisted: false };
+}
+
+// --------------------------------------------------------------------------
 
 /**
  * Save a draft.
@@ -37,18 +72,9 @@ exports.saveDraft = async (req, res) => {
 };
 
 /**
- * Check if any URL is blacklisted (via Mongo).
+ * Send (create) a mail.
+ * If any URL in subject/content is already blacklisted → create recipient mail as spam.
  */
-async function containsBlacklistedUrl(text) {
-  const urls = Array.from(text.matchAll(URL_REGEX), m => m[0]);
-  for (const url of urls) {
-    if (await isBlacklisted(url)) {
-      return { blacklisted: true, url };
-    }
-  }
-  return { blacklisted: false };
-}
-
 exports.sendMail = async (req, res) => {
   try {
     const { to, subject, content } = req.body;
@@ -56,11 +82,7 @@ exports.sendMail = async (req, res) => {
       return res.status(400).json({ error: 'Missing fields' });
     }
 
-    // Check URLs against our Mongo blacklist
     const check = await containsBlacklistedUrl(`${subject} ${content}`);
-    if (check.error) {
-      return res.status(500).json({ error: `Blacklist error for ${check.url}` });
-    }
     const recipientLabels = check.blacklisted ? ['spam'] : ['inbox'];
 
     const { sentMail } = await mailsService.createMail(
@@ -77,7 +99,6 @@ exports.sendMail = async (req, res) => {
     }
     console.error('sendMail error:', err);
     return res.status(500).json({ error: 'Internal server error' });
-
   }
 };
 
@@ -112,7 +133,9 @@ exports.getSpam = async (req, res) => {
 };
 
 /**
- * Toggle the spam label and update the Mongo blacklist.
+ * Toggle spam (legacy endpoint).
+ * NOTE: This will add URLs to blacklist when marking spam,
+ * and remove them when unmarking spam.
  */
 exports.toggleSpam = async (req, res) => {
   try {
@@ -121,22 +144,24 @@ exports.toggleSpam = async (req, res) => {
       return res.status(404).json({ error: 'Mail not found or not owned by you' });
     }
 
-    const urls = Array.from(`${mail.subject} ${mail.content}`.matchAll(URL_REGEX), m => m[0]);
+    const urls = extractUrls(`${mail.subject} ${mail.content}`);
 
     if (mail.labels.includes('spam')) {
-      // Unmark spam: remove label + remove from Mongo blacklist
+      // Unmark spam → remove URLs from blacklist
       mail.labels = mail.labels.filter(l => l !== 'spam');
       for (const url of urls) {
-        await removeUrl(url);
-        await delay(50);
+        try { await removeUrl(url); } catch (_) { /* ignore */ }
       }
     } else {
-      // Mark spam: add label + add to Mongo blacklist
+      // Mark spam → add URLs to blacklist
       mail.labels.push('spam');
       for (const url of urls) {
-        await addUrl(url);
-        await delay(50);
+        try { await addUrl(url); } catch (_) { /* ignore duplicates */ }
       }
+      // keep only spam (+ allow starred)
+      mail.labels = mail.labels.filter(l =>
+        l.toLowerCase() === 'spam' || l.toLowerCase() === 'starred' || !INBOX_LIKE.has(l.toLowerCase())
+      );
     }
 
     await mail.save();
@@ -244,11 +269,11 @@ exports.searchMailsByLabel = async (req, res) => {
 };
 
 /**
- * Add a custom label to a mail.
- */
-/**
  * Add a custom label to a mail (with optional 'add' or 'remove' action).
- * Normalizes "inbox" to "primary" for consistency.
+ * Normalize "inbox" → "primary".
+ * When ADDING 'spam':
+ *   1) extract all URLs from subject+content and add them to blacklist
+ *   2) keep ONLY spam (and let 'starred' coexist)
  */
 exports.addLabelToEmail = async (req, res) => {
   try {
@@ -259,8 +284,8 @@ exports.addLabelToEmail = async (req, res) => {
       return res.status(400).json({ error: 'Label must be a non-empty string' });
     }
 
-    // Normalize 'inbox' to 'primary'
-    label = label.trim().toLowerCase() === 'inbox' ? 'primary' : label.trim();
+    label = label.trim();
+    if (label.toLowerCase() === 'inbox') label = 'primary';
 
     const mail = await Mail.findOne({ id: req.params.id, ownerId: req.user.id });
     if (!mail) {
@@ -271,8 +296,21 @@ exports.addLabelToEmail = async (req, res) => {
       if (!mail.labels.includes(label)) {
         mail.labels.push(label);
       }
+
+      if (label.toLowerCase() === 'spam') {
+        const urls = extractUrls(`${mail.subject} ${mail.content}`);
+        for (const u of urls) {
+          try { await addUrl(u); } catch (_) { /* duplicate/ignore */ }
+        }
+        // keep only spam (+ starred if present)
+        mail.labels = mail.labels.filter(l =>
+          l.toLowerCase() === 'spam' || l.toLowerCase() === 'starred' || !INBOX_LIKE.has(l.toLowerCase())
+        );
+      }
+
     } else if (resolvedAction === 'remove') {
       mail.labels = mail.labels.filter(l => l !== label);
+      // Intentionally NOT removing URLs from blacklist here.
     } else {
       return res.status(400).json({ error: `Invalid action '${resolvedAction}'` });
     }
@@ -280,7 +318,7 @@ exports.addLabelToEmail = async (req, res) => {
     await mail.save();
     return res.status(200).json({
       message: `Label '${label}' ${resolvedAction}ed`,
-      mail: mail.toObject()
+      mail: mail.toObject(),
     });
   } catch (err) {
     console.error('addLabelToEmail error:', err);
@@ -288,11 +326,8 @@ exports.addLabelToEmail = async (req, res) => {
   }
 };
 
-
-
-
 /**
- * Remove a label from a mail.
+ * Remove a label from a mail (by path param).
  */
 exports.removeLabelFromEmail = async (req, res) => {
   try {
@@ -302,7 +337,10 @@ exports.removeLabelFromEmail = async (req, res) => {
     }
     mail.labels = mail.labels.filter(l => l !== req.params.label);
     await mail.save();
-    return res.status(200).json({ message: `Label '${req.params.label}' removed`, mail: mail.toObject() });
+    return res.status(200).json({
+      message: `Label '${req.params.label}' removed`,
+      mail: mail.toObject()
+    });
   } catch (err) {
     console.error('removeLabelFromEmail error:', err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -310,7 +348,7 @@ exports.removeLabelFromEmail = async (req, res) => {
 };
 
 /**
- * Toggle the "read" flag on a mail.
+ * Toggle "read".
  */
 exports.markAsRead = async (req, res) => {
   try {
@@ -324,7 +362,7 @@ exports.markAsRead = async (req, res) => {
 };
 
 /**
- * Mark multiple mails as unread.
+ * Mark multiple as unread.
  */
 exports.markAsUnread = async (req, res) => {
   try {
@@ -341,7 +379,7 @@ exports.markAsUnread = async (req, res) => {
 };
 
 /**
- * Mark all mails as read.
+ * Mark all as read.
  */
 exports.markAllAsRead = async (req, res) => {
   try {
@@ -354,7 +392,7 @@ exports.markAllAsRead = async (req, res) => {
 };
 
 /**
- * Toggle the "star" label on a mail.
+ * Toggle star.
  */
 exports.toggleStar = async (req, res) => {
   try {
@@ -364,7 +402,7 @@ exports.toggleStar = async (req, res) => {
     }
 
     if (mail.labels.includes('starred')) {
-      mail.labels = mail.labels.filter(label => label !== 'starred');
+      mail.labels = mail.labels.filter(l => l !== 'starred');
     } else {
       mail.labels.push('starred');
     }
@@ -375,5 +413,4 @@ exports.toggleStar = async (req, res) => {
     console.error('toggleStar error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
-
 };
