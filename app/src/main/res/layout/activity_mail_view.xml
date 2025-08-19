@@ -23,7 +23,7 @@
             android:padding="0dp"
             android:scaleType="centerInside"
             android:src="@drawable/ic_arrow_back"
-            android:tint="#000000"
+            android:tint="?attr/colorOnSurface"
             android:contentDescription="Back"
             android:background="?attr/selectableItemBackgroundBorderless" />
 
@@ -39,7 +39,7 @@
             android:padding="0dp"
             android:scaleType="centerInside"
             android:src="@drawable/ic_archive"
-            android:tint="#000000"
+            android:tint="?attr/colorOnSurface"
             android:contentDescription="Archive"
             android:background="?attr/selectableItemBackgroundBorderless" />
 
@@ -50,7 +50,7 @@
             android:padding="0dp"
             android:scaleType="centerInside"
             android:src="@drawable/ic_delete"
-            android:tint="#000000"
+            android:tint="?attr/colorOnSurface"
             android:contentDescription="Delete"
             android:background="?attr/selectableItemBackgroundBorderless" />
 
@@ -61,7 +61,7 @@
             android:padding="0dp"
             android:scaleType="centerInside"
             android:src="@drawable/ic_star"
-            android:tint="#000000"
+            android:tint="?attr/colorOnSurface"
             android:contentDescription="Star"
             android:background="?attr/selectableItemBackgroundBorderless" />
 
@@ -72,7 +72,7 @@
             android:padding="0dp"
             android:scaleType="centerInside"
             android:src="@drawable/ic_vertical_dots"
-            android:tint="#000000"
+            android:tint="?attr/colorOnSurface"
             android:contentDescription="More options"
             android:background="?attr/selectableItemBackgroundBorderless" />
     </LinearLayout>
@@ -92,7 +92,7 @@
             android:layout_height="wrap_content"
             android:textStyle="bold"
             android:textSize="20sp"
-            android:textColor="#000000"
+            android:textColor="?attr/colorOnSurface"
             android:paddingBottom="8dp" />
 
         <LinearLayout
@@ -191,7 +191,7 @@
                 android:padding="0dp"
                 android:scaleType="centerInside"
                 android:src="@drawable/ic_reply"
-                android:tint="#000000"
+                android:tint="?attr/colorOnSurface"
                 android:contentDescription="Reply"
                 android:background="@null" />
 
@@ -199,7 +199,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Reply"
-                android:textColor="#000000"
+                android:textColor="?attr/colorOnSurface"
                 android:textSize="16sp"
                 android:paddingStart="8dp" />
         </LinearLayout>
@@ -222,7 +222,7 @@
                 android:padding="0dp"
                 android:scaleType="centerInside"
                 android:src="@drawable/ic_forward"
-                android:tint="#000000"
+                android:tint="?attr/colorOnSurface"
                 android:contentDescription="Forward"
                 android:background="@null" />
 
@@ -230,7 +230,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Forward"
-                android:textColor="#000000"
+                android:textColor="?attr/colorOnSurface"
                 android:textSize="16sp"
                 android:paddingStart="8dp" />
         </LinearLayout>
