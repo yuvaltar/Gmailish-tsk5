@@ -39,6 +39,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.util.ArrayList;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -197,7 +198,7 @@ public class InboxActivity extends AppCompatActivity {
                 // Dynamic labels (id may be Menu.NONE)
                 CharSequence title = menuItem.getTitle();
                 if (title != null) {
-                    currentLabel = title.toString().toLowerCase();
+                    currentLabel = title.toString();
                     checkedMenuId = id; // may be 0 for dynamic items; okay
                     persistSelection();
                     viewModel.loadEmailsByLabel(currentLabel);
@@ -338,6 +339,15 @@ public class InboxActivity extends AppCompatActivity {
                 Log.d("Labels", "Got: " + json);
                 try {
                     JSONArray array = new JSONArray(json);
+                    ArrayList<String> names = new ArrayList<>();
+                    for (int i = 0; i < array.length(); i++) {
+                        JSONObject o = array.getJSONObject(i);
+                        names.add(o.optString("name"));
+                    }
+                    getSharedPreferences("prefs", MODE_PRIVATE)
+                            .edit()
+                            .putString("cached_label_names", new JSONArray(names).toString())
+                            .apply();
                     runOnUiThread(() -> {
                         Menu menu = navigationView.getMenu();
                         menu.removeGroup(R.id.dynamic_labels_group);
