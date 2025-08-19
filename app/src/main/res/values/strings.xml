@@ -15,6 +15,11 @@
     <string name="compose">Compose</string>
     <string name="all_inboxes">All inboxes</string>
     <string name="logout">logout</string>
+    <!-- existing strings ... -->
+    <string name="toggle_theme">Toggle theme</string>
+    <!-- optional: if you show toasts -->
+    <string name="dark_mode_on">Dark mode on</string>
+    <string name="light_mode_on">Light mode on</string>
 
 
 </resources>

@@ -28,7 +28,7 @@ public class ComposeActivity extends AppCompatActivity {
     private static final String TAG = "ComposeSave";
 
     private EditText toField, subjectField, bodyField;
-    private ImageView sendButton, backButton, attachButton;
+    private ImageView sendButton, backButton;
     private ComposeViewModel viewModel;
 
     @Override
@@ -41,15 +41,13 @@ public class ComposeActivity extends AppCompatActivity {
         bodyField = findViewById(R.id.bodyField);
         sendButton = findViewById(R.id.sendButton);
         backButton = findViewById(R.id.backButton);
-        attachButton = findViewById(R.id.attachButton);
 
         SharedPreferences prefs = getSharedPreferences("prefs", MODE_PRIVATE);
         String token = prefs.getString("jwt", null);
         Log.d(TAG, "JWT token loaded: " + token);
 
         backButton.setOnClickListener(v -> finish());
-        attachButton.setOnClickListener(v ->
-                Toast.makeText(this, "Attach button clicked", Toast.LENGTH_SHORT).show());
+
 
         viewModel = new ViewModelProvider(this).get(ComposeViewModel.class);
 

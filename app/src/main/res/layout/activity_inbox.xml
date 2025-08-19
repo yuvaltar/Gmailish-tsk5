@@ -28,7 +28,7 @@
             android:paddingTop="8dp"
             android:paddingBottom="8dp"
             android:elevation="4dp"
-            android:background="@drawable/top_bar_background">
+            android:background="?attr/colorSurfaceVariant">
 
             <!-- Hamburger Menu -->
             <ImageView
@@ -50,7 +50,7 @@
                 android:layout_marginEnd="8dp"
                 app:cardCornerRadius="24dp"
                 app:cardElevation="2dp"
-                app:cardBackgroundColor="@android:color/white">
+                app:cardBackgroundColor="?attr/colorSurface">
 
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/searchBar"
@@ -69,6 +69,17 @@
                     android:maxLines="1"
                     android:gravity="center_vertical" />
             </androidx.cardview.widget.CardView>
+
+            <ImageButton
+                android:id="@+id/themeToggleTopBar"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginEnd="8dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/toggle_theme"
+                android:padding="8dp"
+                android:src="@drawable/ic_dark_mode_24"
+                android:tint="?attr/colorOnSurface" />
 
             <!-- Avatar (Gmail-style) -->
             <FrameLayout
@@ -105,7 +116,7 @@
             android:layout_height="match_parent"
             android:layout_below="@id/topAppBar"
             android:layout_above="@id/bottomActionBar"
-            android:background="@android:color/white"
+            android:background="?attr/colorSurface"
             android:clipToPadding="false"
             android:paddingTop="4dp"
             android:paddingBottom="4dp" />
@@ -164,11 +175,13 @@
         android:layout_width="wrap_content"
         android:layout_height="match_parent"
         android:layout_gravity="start"
-        android:background="#F2F3F6"
+        android:background="?attr/colorSurface"
         app:headerLayout="@layout/nav_header_top"
         app:menu="@menu/nav_drawer_menu"
         app:itemBackground="@drawable/nav_item_checked_bg"
         app:itemIconSize="24dp"
+        app:itemTextColor="?attr/colorOnSurface"
+        app:itemIconTint="?attr/colorOnSurface"
         app:itemTextAppearance="@style/NavItemText" />
 
 </androidx.drawerlayout.widget.DrawerLayout>
