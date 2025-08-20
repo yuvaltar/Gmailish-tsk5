@@ -7,6 +7,7 @@ import android.os.Bundle;
 import android.view.View;
 import android.widget.EditText;
 import android.widget.ImageButton;
+
 import android.widget.LinearLayout;
 import android.widget.PopupMenu;
 import android.widget.TextView;
@@ -26,6 +27,11 @@ import java.util.Date;
 import java.util.Locale;
 import java.util.List;
 
+
+import dagger.hilt.android.AndroidEntryPoint;
+
+@AndroidEntryPoint
+
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -37,6 +43,7 @@ import okhttp3.Response;
 /**
  * MailViewActivity – reply now fills the real sender email and the reply/forward boxes are clickable.
  */
+
 public class MailViewActivity extends AppCompatActivity {
 
     private TextView senderText, recipientText, subjectText, contentText, timestampText, senderIcon;
@@ -46,6 +53,7 @@ public class MailViewActivity extends AppCompatActivity {
     private LinearLayout replyBox, forwardBox;
 
     private MailViewModel viewModel;
+
     private String mailId;
     private boolean isStarred;
     private String jwtToken;
@@ -80,6 +88,7 @@ public class MailViewActivity extends AppCompatActivity {
         forwardBox    = findViewById(R.id.forwardBox);
 
         viewModel = new ViewModelProvider(this).get(MailViewModel.class);
+
         viewModel.init(getApplicationContext());
 
         SharedPreferences prefs = getSharedPreferences("prefs", MODE_PRIVATE);
@@ -89,7 +98,10 @@ public class MailViewActivity extends AppCompatActivity {
         preloadUserLabelsFromPrefs();
 
         viewModel.mailData.observe(this, mail -> {
-            if (mail == null) return;
+            if (mail == null){
+              bindMailToViews(mail);
+              return;
+            }
 
             currentMail = mail;
 
@@ -105,6 +117,7 @@ public class MailViewActivity extends AppCompatActivity {
             String senderName = mail.optString("senderName");
             if (senderName != null && !senderName.isEmpty()) {
                 senderIcon.setText(senderName.substring(0, 1).toUpperCase());
+
             }
 
             currentLabels = mail.optJSONArray("labels");
@@ -113,10 +126,17 @@ public class MailViewActivity extends AppCompatActivity {
         });
 
         viewModel.errorMessage.observe(this, msg ->
+
                 Toast.makeText(this, msg, Toast.LENGTH_SHORT).show());
+      
+       // OFFLINE-FIRST load and then refresh if online
+        viewModel.loadMailDetail(getApplicationContext(), mailId, jwtToken);
 
         viewModel.fetchMailById(mailId, jwtToken);
-        viewModel.markAsRead(mailId, jwtToken);
+      // Mark as read (network + local)
+        if (jwtToken != null && !jwtToken.isEmpty()) {
+            viewModel.markAsRead(mailId, jwtToken);
+        }
 
         /* ----------------- Reply / Forward ----------------- */
 
@@ -144,8 +164,8 @@ public class MailViewActivity extends AppCompatActivity {
         });
 
         archiveButton.setOnClickListener(v -> {
-            removeAllInboxLabels(() -> {
-                viewModel.addLabel(mailId, "archive", jwtToken, getApplicationContext());
+            // Use moveToLabel flow directly to keep offline + pending consistent
+            viewModel.moveToLabelOfflineFirst(mailId, "archive", jwtToken, getApplicationContext(), () -> {
                 Toast.makeText(this, "Archived", Toast.LENGTH_SHORT).show();
                 finish();
             });
@@ -165,8 +185,7 @@ public class MailViewActivity extends AppCompatActivity {
                     showLabelPickerWithChecks();
                     return true;
                 } else if (id == R.id.menu_report_spam) {
-                    removeAllInboxLabels(() -> {
-                        viewModel.addLabel(mailId, "spam", jwtToken, getApplicationContext());
+                    viewModel.moveToLabelOfflineFirst(mailId, "spam", jwtToken, getApplicationContext(), () -> {
                         Toast.makeText(this, "Reported as spam", Toast.LENGTH_SHORT).show();
                         finish();
                     });
@@ -176,6 +195,42 @@ public class MailViewActivity extends AppCompatActivity {
             });
             popup.show();
         });
+    }
+
+
+    private void bindMailToViews(JSONObject mail) {
+        senderText.setText(mail.optString("senderName"));
+        recipientText.setText("To: " + mail.optString("recipientName") + " <" + mail.optString("recipientEmail") + ">");
+        subjectText.setText(mail.optString("subject"));
+        contentText.setText(mail.optString("content"));
+
+        String rawTime = mail.optString("timestamp");
+        try {
+            String formatted = formatIso8601ToMonthDay(rawTime);
+            timestampText.setText(formatted);
+        } catch (Exception e) {
+            timestampText.setText(rawTime);
+        }
+
+        String senderName = mail.optString("senderName");
+        if (senderName != null && !senderName.isEmpty()) {
+            senderIcon.setText(senderName.substring(0, 1).toUpperCase());
+        } else {
+            senderIcon.setText("");
+        }
+
+        currentLabels = mail.optJSONArray("labels");
+        if (currentLabels == null) currentLabels = new JSONArray();
+        isStarred = containsLabel(currentLabels, "starred");
+        updateStarIcon();
+    }
+
+    private boolean containsLabel(JSONArray array, String label) {
+        if (array == null) return false;
+        for (int i = 0; i < array.length(); i++) {
+            if (label.equalsIgnoreCase(array.optString(i))) return true;
+        }
+      return false;
     }
 
     /* ================= Reply helpers ================= */
@@ -478,23 +533,70 @@ public class MailViewActivity extends AppCompatActivity {
                 labelsToRemove.add("inbox".equalsIgnoreCase(label) ? "primary" : label);
             }
         }
-        removeLabelsSequentially(labelsToRemove, 0, onComplete);
+        return false;
+    }
+
+    private void updateStarIcon() {
+        starButton.setImageResource(isStarred ? R.drawable.ic_star_shine : R.drawable.ic_star);
     }
 
     private void showMoveToDialog() {
-        String[] folderNames = {"Primary", "Promotions", "Social", "Updates", "Spam", "Trash", "Drafts", "Starred", "Important"};
-        String[] labelValues = {"primary", "promotions", "social", "updates", "spam", "trash", "drafts", "starred", "important"};
-        new AlertDialog.Builder(this)
+        String[] folderNames = {"Primary", "Promotions", "Social", "Updates", "Spam", "Trash", "Drafts", "Starred", "Important", "Archive"};
+        String[] labelValues = {"primary", "promotions", "social", "updates", "spam", "trash", "drafts", "starred", "important", "archive"};
+        new AlertDialog.Builder(MailViewActivity.this)
+
                 .setTitle("Move to")
                 .setItems(folderNames, (dialog, which) -> {
                     String targetLabel = labelValues[which];
-                    removeAllInboxLabels(() -> {
-                        viewModel.addLabel(mailId, targetLabel, jwtToken, getApplicationContext());
+                    viewModel.moveToLabelOfflineFirst(mailId, targetLabel, jwtToken, getApplicationContext(), () -> {
                         runOnUiThread(() -> {
                             Toast.makeText(this, "Moved to " + folderNames[which], Toast.LENGTH_SHORT).show();
                             finish();
                         });
                     });
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+
+    private void showLabelAssignmentDialog() {
+        List<String> options = new ArrayList<>();
+        options.add("Add to new label");
+        for (String name : viewModel.getUserLabelNames()) {
+            options.add(name);
+        }
+        CharSequence[] choices = options.toArray(new CharSequence[0]);
+        new AlertDialog.Builder(this)
+                .setTitle("Add to label")
+                .setItems(choices, (dialog, which) -> {
+                    if (which == 0) {
+                        showNewLabelInput();
+                    } else {
+                        String selectedLabel = options.get(which);
+                        // For "label as", keep current inbox labels and add another tag
+                        viewModel.addLabel(mailId, selectedLabel, jwtToken, getApplicationContext());
+                        Toast.makeText(this, "Added to " + selectedLabel, Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void showNewLabelInput() {
+        final EditText input = new EditText(this);
+        input.setHint("Label name");
+        new AlertDialog.Builder(this)
+                .setTitle("Create new label")
+                .setView(input)
+                .setPositiveButton("Create", (dialog, which) -> {
+                    String newLabel = input.getText().toString().trim();
+                    if (!newLabel.isEmpty()) {
+                        viewModel.addLabel(mailId, newLabel, jwtToken, getApplicationContext());
+                        Toast.makeText(this, "Added to " + newLabel, Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(this, "Label name cannot be empty", Toast.LENGTH_SHORT).show();
+                    }
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
@@ -506,6 +608,7 @@ public class MailViewActivity extends AppCompatActivity {
                 label.equalsIgnoreCase("updates") || label.equalsIgnoreCase("trash") ||
                 label.equalsIgnoreCase("drafts") || label.equalsIgnoreCase("spam") ||
                 label.equalsIgnoreCase("archive") || label.equalsIgnoreCase("important");
+
     }
 
     private String formatIso8601ToMonthDay(String iso) throws Exception {
@@ -518,6 +621,7 @@ public class MailViewActivity extends AppCompatActivity {
             String normalized = iso;
             int plus = Math.max(iso.lastIndexOf('+'), iso.lastIndexOf('-'));
             if (plus > 10 && iso.length() >= plus + 6 && iso.charAt(iso.length() - 3) == ':') {
+                // Normalize timezone like +03:00 -> +0300
                 normalized = iso.substring(0, iso.length() - 3) + iso.substring(iso.length() - 2);
             }
             boolean hasMillis = normalized.contains(".");

@@ -3,7 +3,11 @@ package com.example.gmailish.ui.inbox;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+
+import android.util.Log;
+
 import android.os.Build;
+
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -29,7 +33,11 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+
+import java.util.concurrent.Executors;
+
 import java.util.Locale;
+
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -41,9 +49,10 @@ import okhttp3.Response;
 
 public class EmailAdapter extends RecyclerView.Adapter<EmailAdapter.EmailViewHolder> {
 
+
+    private static final String TAG = "EmailAdapter";
     private final List<Email> emailList = new ArrayList<>();
 
-    // Networking for star toggle
     private final OkHttpClient http = new OkHttpClient();
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
@@ -62,19 +71,18 @@ public class EmailAdapter extends RecyclerView.Adapter<EmailAdapter.EmailViewHol
         EmailViewHolder(@NonNull View view) {
             super(view);
             senderIcon = view.findViewById(R.id.senderIcon);
-            sender     = view.findViewById(R.id.sender);
-            subject    = view.findViewById(R.id.subject);
-            content    = view.findViewById(R.id.content);
-            timestamp  = view.findViewById(R.id.timestamp);
-            starIcon   = view.findViewById(R.id.starIcon);
+            sender = view.findViewById(R.id.sender);
+            subject = view.findViewById(R.id.subject);
+            content = view.findViewById(R.id.content);
+            timestamp = view.findViewById(R.id.timestamp);
+            starIcon = view.findViewById(R.id.starIcon);
         }
     }
 
     @NonNull
     @Override
     public EmailViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-        View v = LayoutInflater.from(parent.getContext())
-                .inflate(R.layout.email_item, parent, false);
+        View v = LayoutInflater.from(parent.getContext()).inflate(R.layout.email_item, parent, false);
         return new EmailViewHolder(v);
     }
 
@@ -82,11 +90,11 @@ public class EmailAdapter extends RecyclerView.Adapter<EmailAdapter.EmailViewHol
     public void onBindViewHolder(@NonNull EmailViewHolder holder, int position) {
         Email email = emailList.get(position);
 
-        // Bind basics
         String senderName = email.senderName != null ? email.senderName : "";
         holder.sender.setText(senderName);
         holder.subject.setText(email.subject != null ? email.subject : "");
         holder.content.setText(email.content != null ? email.content : "");
+
 
         // Format timestamp: today -> HH:mm, else -> MMM d
         String prettyTs = formatListTimestamp(email.timestamp);
@@ -99,29 +107,26 @@ public class EmailAdapter extends RecyclerView.Adapter<EmailAdapter.EmailViewHol
 
         // Read/unread visual
         holder.itemView.setAlpha(email.read ? 0.6f : 1.0f);
-
-        // Star icon (match MailView visuals)
         setStarIcon(holder.starIcon, email.starred);
 
-        // Toggle star from list (optimistic UI + server)
         holder.starIcon.setOnClickListener(v -> {
             boolean newState = !email.starred;
-
-            // optimistic UI update
             email.starred = newState;
             int p = holder.getAdapterPosition();
             if (p != RecyclerView.NO_POSITION) notifyItemChanged(p);
 
-            // persist to backend via label add/remove
             Context ctx = v.getContext().getApplicationContext();
             SharedPreferences prefs = ctx.getSharedPreferences("prefs", Context.MODE_PRIVATE);
             String token = prefs.getString("jwt", null);
+
+            String labelId = "starred";
+            LocalLabelActions.applyStarLocally(ctx, email.id, newState, labelId);
+
             if (token != null) {
-                patchLabel(token, email.id, "starred", !newState); // remove when turning off
+                patchLabel(token, email.id, labelId, !newState);
             }
         });
 
-        // Open message -> optimistic read + launch detail
         holder.itemView.setOnClickListener(v -> {
             if (!email.read) {
                 email.read = true;
@@ -129,7 +134,7 @@ public class EmailAdapter extends RecyclerView.Adapter<EmailAdapter.EmailViewHol
                 if (p != RecyclerView.NO_POSITION) notifyItemChanged(p);
             }
             Intent intent = new Intent(v.getContext(), MailViewActivity.class);
-            intent.putExtra("mailId", email.id); // id is String
+            intent.putExtra("mailId", email.id);
             v.getContext().startActivity(intent);
         });
     }
@@ -140,11 +145,9 @@ public class EmailAdapter extends RecyclerView.Adapter<EmailAdapter.EmailViewHol
     }
 
     private void setStarIcon(ImageView iv, boolean starred) {
-        // Same icons as MailView
         iv.setImageResource(starred ? R.drawable.ic_star_shine : R.drawable.ic_star);
     }
 
-    /** PATCH /api/mails/:id/label with either add or remove action for "starred" */
     private void patchLabel(String token, String mailId, String label, boolean remove) {
         try {
             JSONObject json = new JSONObject();
@@ -160,20 +163,63 @@ public class EmailAdapter extends RecyclerView.Adapter<EmailAdapter.EmailViewHol
 
             http.newCall(req).enqueue(new Callback() {
                 @Override public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                    // Keep optimistic UI; optionally reload on failure
+                    Log.w(TAG, "patchLabel failed: " + e.getMessage());
                 }
                 @Override public void onResponse(@NonNull Call call, @NonNull Response response) {
-                    response.close(); // no UI change needed
+                    response.close();
                 }
             });
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            Log.e(TAG, "patchLabel exception: " + e.getMessage());
+        }
     }
+
+    static final class LocalLabelActions {
+        static com.example.gmailish.data.db.AppDatabase getDb(Context ctx) {
+            return com.example.gmailish.ui.inbox.CreateLabelActivity.DbHolder.getInstance(ctx);
+        }
+
+        static void applyStarLocally(Context ctx, String mailId, boolean starred, String labelIdRaw) {
+            String labelId = normalizeLabelId(labelIdRaw);
+            Log.d(TAG, "applyStarLocally: mailId=" + mailId + " starred=" + starred + " labelId=" + labelId);
+
+            Executors.newSingleThreadExecutor().execute(() -> {
+                try {
+                    var db = getDb(ctx);
+                    var labelDao = db.labelDao();
+                    var mailLabelDao = db.mailLabelDao();
+                    var mailDao = db.mailDao();
+
+                    mailDao.setStarred(mailId, starred);
+
+                    if (starred) {
+                        labelDao.upsert(new com.example.gmailish.data.entity.LabelEntity(labelId, null, labelId));
+                        mailLabelDao.add(new com.example.gmailish.data.entity.MailLabelCrossRef(mailId, labelId));
+                    } else {
+                        mailLabelDao.remove(mailId, labelId);
+                    }
+
+                    int count = mailLabelDao.getMailsForLabelSync(labelId).size();
+                    Log.d(TAG, "applyStarLocally: label '" + labelId + "' now has mails=" + count);
+                } catch (Throwable t) {
+                    Log.e(TAG, "applyStarLocally error: " + t.getMessage());
+                }
+            });
+        }
+
+        static String normalizeLabelId(String id) {
+            if (id == null) return null;
+            if ("inbox".equalsIgnoreCase(id)) return "primary";
+            return id.toLowerCase();
+        }
+    }
+
 
     /* =========================
        Timestamp formatting
        ========================= */
 
-    private String formatListTimestamp(String raw) {
+    private String (String raw) {
         if (raw == null || raw.isEmpty()) return "";
         try {
             if (Build.VERSION.SDK_INT >= 26) {
@@ -228,3 +274,4 @@ public class EmailAdapter extends RecyclerView.Adapter<EmailAdapter.EmailViewHol
         }
     }
 }
+

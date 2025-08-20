@@ -1,7 +1,6 @@
 package com.example.gmailish.ui.register;
 
 import android.annotation.SuppressLint;
-
 import android.app.Activity;
 import android.app.DatePickerDialog;
 import android.content.Intent;
@@ -9,6 +8,7 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.OpenableColumns;
+import android.util.Log;
 import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
@@ -37,37 +37,35 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.Locale;
 
+import dagger.hilt.android.AndroidEntryPoint;
+
+@AndroidEntryPoint
 public class RegisterActivity extends AppCompatActivity {
 
-
+    private static final String TAG = "RegisterActivity";
     private RegisterViewModel vm;
+
     private ProgressBar progressBar;
     private TextView stepIndicator;
     private LinearLayout progressSection;
-
     private LinearLayout welcomeBlock, stepName, stepDobGender, stepUsername;
 
-    // UI Elements
     private EditText firstNameInput, lastNameInput, dobInput, usernameInput, passwordInput, confirmInput;
     private MaterialAutoCompleteTextView genderSpinner;
 
     private Date selectedDob = null;
-
     private ImageView imagePreview;
     private ImageView logo;
     private Button selectImageButton;
 
-    // Welcome block buttons
     private MaterialButton buttonGetStarted;
     private MaterialButton buttonLogin;
 
-    // Back buttons
     private Button backToWelcome, backToStep1, backToStep2;
 
     private Uri selectedImageUri = null;
-
     private File imageFile;
-    private static final int PICK_IMAGE_REQUEST = 1;
+
     private ActivityResultLauncher<Intent> imagePickerLauncher;
 
     @Override
@@ -75,9 +73,9 @@ public class RegisterActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_register);
 
-        // ViewModel
+        Log.d(TAG, "RegisterActivity created");
+
         vm = new ViewModelProvider(this).get(RegisterViewModel.class);
-        vm.setDatabaseContext(getApplicationContext()); // Important for Room (no Hilt)
 
         progressBar = findViewById(R.id.progressBar);
         stepIndicator = findViewById(R.id.step_indicator);
@@ -90,23 +88,15 @@ public class RegisterActivity extends AppCompatActivity {
                     if (result.getResultCode() == Activity.RESULT_OK && result.getData() != null) {
                         selectedImageUri = result.getData().getData();
                         imagePreview.setImageURI(selectedImageUri);
+                        Log.d(TAG, "Image selected: " + selectedImageUri);
                     }
                 }
         );
 
-        // Initialize views
         initViews();
-
-        // Set up gender spinner
         setupGenderSpinner();
-
-        // Set up date picker
         setupDatePicker();
-
-        // Set up buttons
         setupButtonListeners();
-
-        // Set up observers
         setupObservers();
     }
 
@@ -127,9 +117,9 @@ public class RegisterActivity extends AppCompatActivity {
         confirmInput = findViewById(R.id.editConfirmPassword);
 
         genderSpinner = findViewById(R.id.spinnerGender);
+
         imagePreview = findViewById(R.id.imagePreview);
         selectImageButton = findViewById(R.id.button_select_image);
-
         logo = findViewById(R.id.logo);
 
         buttonGetStarted = findViewById(R.id.button_get_started);
@@ -147,9 +137,7 @@ public class RegisterActivity extends AppCompatActivity {
                 R.array.gender_array,
                 android.R.layout.simple_dropdown_item_1line
         );
-
         genderSpinner.setAdapter(adapter);
-
         genderSpinner.setOnTouchListener((v, event) -> {
             genderSpinner.showDropDown();
             return true;
@@ -169,7 +157,6 @@ public class RegisterActivity extends AppCompatActivity {
                         Calendar selectedCal = Calendar.getInstance();
                         selectedCal.set(year1, month1, dayOfMonth);
                         selectedDob = selectedCal.getTime();
-
                         SimpleDateFormat sdf = new SimpleDateFormat("dd/MM/yyyy", Locale.getDefault());
                         dobInput.setText(sdf.format(selectedDob));
                     },
@@ -177,16 +164,6 @@ public class RegisterActivity extends AppCompatActivity {
             );
             datePickerDialog.show();
         });
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-
-        if (requestCode == PICK_IMAGE_REQUEST && resultCode == RESULT_OK && data != null && data.getData() != null) {
-            selectedImageUri = data.getData();
-            imagePreview.setImageURI(selectedImageUri);
-        }
     }
 
     private void setupButtonListeners() {
@@ -231,10 +208,8 @@ public class RegisterActivity extends AppCompatActivity {
 
                 stepName.setVisibility(View.GONE);
                 stepDobGender.setVisibility(View.VISIBLE);
-
                 backToWelcome.setVisibility(View.GONE);
                 backToStep1.setVisibility(View.VISIBLE);
-
                 updateProgress(2, "Step 2 of 3");
             }
         });
@@ -245,22 +220,24 @@ public class RegisterActivity extends AppCompatActivity {
             if (valid) {
                 stepDobGender.setVisibility(View.GONE);
                 stepUsername.setVisibility(View.VISIBLE);
-
                 backToStep1.setVisibility(View.GONE);
                 backToStep2.setVisibility(View.VISIBLE);
-
                 updateProgress(3, "Step 3 of 3");
             }
         });
 
         submitButton.setOnClickListener(v -> {
+            Log.d(TAG, "Submit button clicked");
             boolean valid = vm.setUsernameAndPassword(
                     usernameInput.getText().toString(),
                     passwordInput.getText().toString(),
                     confirmInput.getText().toString()
             );
             if (valid) {
+                Log.d(TAG, "Form validation passed, calling register()");
                 vm.register(imageFile);
+            } else {
+                Log.d(TAG, "Form validation failed");
             }
         });
 
@@ -310,6 +287,7 @@ public class RegisterActivity extends AppCompatActivity {
                 int index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
                 String fileName = cursor.getString(index);
                 file = new File(getCacheDir(), fileName);
+
                 try (InputStream in = getContentResolver().openInputStream(uri);
                      FileOutputStream out = new FileOutputStream(file)) {
                     byte[] buf = new byte[1024];
@@ -317,10 +295,12 @@ public class RegisterActivity extends AppCompatActivity {
                     while ((len = in.read(buf)) > 0) {
                         out.write(buf, 0, len);
                     }
+                } catch (Exception e) {
+                    Log.e(TAG, "Error copying file from URI", e);
                 }
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            Log.e(TAG, "Error getting file from URI", e);
         }
         return file;
     }
@@ -329,21 +309,35 @@ public class RegisterActivity extends AppCompatActivity {
         vm.firstNameError.observe(this, err -> {
             if (err != null) firstNameInput.setError(err);
         });
+
         vm.lastNameError.observe(this, err -> {
             if (err != null) lastNameInput.setError(err);
         });
+
         vm.dobError.observe(this, err -> {
             if (err != null) dobInput.setError(err);
         });
+
         vm.passwordError.observe(this, err -> {
             if (err != null) passwordInput.setError(err);
         });
+
         vm.message.observe(this, msg -> {
-            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
+            Log.d(TAG, "Received message: " + msg);
+            if (msg != null) {
+                String trimmed = msg.trim();
+                if (!trimmed.isEmpty()) {
+                    Toast.makeText(this, trimmed, Toast.LENGTH_LONG).show();
+                }
+            }
         });
+
         vm.registrationSuccess.observe(this, success -> {
+            Log.d(TAG, "Registration success: " + success);
             if (success != null && success) {
+                // Navigate to login or main activity as needed
                 Intent intent = new Intent(this, LoginActivity.class);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
                 startActivity(intent);
                 finish();
             }

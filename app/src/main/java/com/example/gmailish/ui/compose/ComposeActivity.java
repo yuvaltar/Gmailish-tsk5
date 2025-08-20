@@ -1,6 +1,5 @@
 package com.example.gmailish.ui.compose;
 
-import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.util.Log;
 import android.widget.EditText;
@@ -11,17 +10,10 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.lifecycle.ViewModelProvider;
 
 import com.example.gmailish.R;
-import com.example.gmailish.data.db.AppDatabase;
-import com.example.gmailish.data.entity.MailEntity;
-import com.example.gmailish.data.repository.MailRepository;
 
-import org.json.JSONObject;
+import dagger.hilt.android.AndroidEntryPoint;
 
-import java.util.Arrays;
-import java.util.Date;
-import java.util.UUID;
-import java.util.concurrent.Executors;
-
+@AndroidEntryPoint
 public class ComposeActivity extends AppCompatActivity {
 
     private static final String TAG = "ComposeSave";
@@ -44,10 +36,6 @@ public class ComposeActivity extends AppCompatActivity {
         // Prefill from MailViewActivity (Reply/Forward)
         applyPrefillFromExtras();
 
-        SharedPreferences prefs = getSharedPreferences("prefs", MODE_PRIVATE);
-        String token = prefs.getString("jwt", null);
-        Log.d(TAG, "JWT token loaded: " + token);
-
         backButton.setOnClickListener(v -> finish());
 
         viewModel = new ViewModelProvider(this).get(ComposeViewModel.class);
@@ -59,9 +47,10 @@ public class ComposeActivity extends AppCompatActivity {
             }
         });
 
-        // IMPORTANT: sendSuccess must emit a JSON payload String from ComposeViewModel
+        // IMPORTANT: Do not write to Room here. ViewModel handles all persistence.
         viewModel.sendSuccess.observe(this, payload -> {
             Log.d(TAG, "sendSuccess observed. payload=" + payload);
+
             if (payload == null || payload.isEmpty()) return;
 
             try {
@@ -154,9 +143,9 @@ public class ComposeActivity extends AppCompatActivity {
             String to = toField.getText().toString().trim();
             String subject = subjectField.getText().toString().trim();
             String content = bodyField.getText().toString().trim();
-            Log.d(TAG, "Send tapped. to=" + to + ", subject=" + subject +
-                    ", len(content)=" + (content != null ? content.length() : 0));
-            viewModel.sendEmail(to, subject, content, token);
+            Log.d(TAG, "Send tapped. to=" + to + ", subject=" + subject
+                    + ", len(content)=" + (content != null ? content.length() : 0));
+            viewModel.sendEmail(this, to, subject, content);
         });
     }
 

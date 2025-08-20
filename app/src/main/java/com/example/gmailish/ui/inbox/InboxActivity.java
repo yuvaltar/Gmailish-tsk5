@@ -1,7 +1,10 @@
 package com.example.gmailish.ui.inbox;
 
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.ConnectivityManager;
+import android.net.NetworkCapabilities;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
@@ -29,9 +32,15 @@ import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import com.example.gmailish.R;
+import com.example.gmailish.data.db.AppDatabase;
+import com.example.gmailish.data.entity.LabelEntity;
+import com.example.gmailish.data.sync.PendingSyncManager;
 import com.example.gmailish.ui.HeaderManager;
 import com.example.gmailish.ui.compose.ComposeActivity;
+
+
 import com.example.gmailish.util.ThemeManager;
+
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.navigation.NavigationView;
 
@@ -39,17 +48,29 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.IOException;
+
+import java.util.HashSet;
+import java.util.List;
+
 import java.util.ArrayList;
 
+
+import javax.inject.Inject;
+
+import dagger.hilt.android.AndroidEntryPoint;
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 
+@AndroidEntryPoint
 public class InboxActivity extends AppCompatActivity {
 
     private static final String TAG = "InboxActivity";
+
+    @Inject PendingSyncManager pendingSyncManager; // NEW: injected flusher
+
     private static final String LABEL_ALL_INBOXES = "__ALL_INBOXES__";
     private static final String KEY_ALL_INBOXES = "__ALL__";
 
@@ -80,6 +101,7 @@ public class InboxActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_inbox);
+
 
         NavigationView navigationView = findViewById(R.id.navigationView);
         drawerLayout = findViewById(R.id.drawerLayout);
@@ -119,12 +141,15 @@ public class InboxActivity extends AppCompatActivity {
             decor.setSystemUiVisibility(flags);
         }
 
+
         // Drawer + hamburger
         ImageView hamburgerIcon = findViewById(R.id.hamburgerIcon);
         toggle = new ActionBarDrawerToggle(this, drawerLayout, R.string.open, R.string.close);
         drawerLayout.addDrawerListener(toggle);
         toggle.syncState();
         hamburgerIcon.setOnClickListener(v -> drawerLayout.openDrawer(GravityCompat.START));
+
+
 
         // Back press closes drawer first
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
@@ -137,6 +162,7 @@ public class InboxActivity extends AppCompatActivity {
                 }
             }
         });
+
 
         // Header window inset padding
         View header = navigationView.getHeaderView(0);
@@ -157,11 +183,13 @@ public class InboxActivity extends AppCompatActivity {
 
         // Drawer selections
         navigationView.setNavigationItemSelectedListener(menuItem -> {
-            Log.d("Nav", "Selected: " + menuItem.getTitle());
+            Log.d(TAG, "Nav Selected: " + menuItem.getTitle());
             menuItem.setChecked(true);
             drawerLayout.closeDrawer(GravityCompat.START);
 
+            String chosen = null;
             int id = menuItem.getItemId();
+
             if (id == R.id.nav_all_inboxes) {
                 currentLabel = LABEL_ALL_INBOXES;
                 checkedMenuId = R.id.nav_all_inboxes;
@@ -206,7 +234,6 @@ public class InboxActivity extends AppCompatActivity {
 
             } else if (id == R.id.nav_create_label) {
                 startActivity(new Intent(this, CreateLabelActivity.class));
-
             } else {
                 // Dynamic labels (id may be Menu.NONE)
                 CharSequence title = menuItem.getTitle();
@@ -227,7 +254,6 @@ public class InboxActivity extends AppCompatActivity {
         setBadge(menu.findItem(R.id.nav_promotions), "26 new", 0xFFBFE6C8);
         setBadge(menu.findItem(R.id.nav_social), "27 new", 0xFFD5E4FF);
         setBadge(menu.findItem(R.id.nav_updates), "82 new", 0xFFFFE2CC);
-
         viewModel.getUnreadCounts().observe(this, counts -> {
             if (counts == null) return;
 
@@ -262,6 +288,7 @@ public class InboxActivity extends AppCompatActivity {
 
         // Dynamic labels
         loadUserLabels(navigationView);
+        loadLocalLabels(navigationView);
         viewModel.refreshUnreadCounts();
 
         // Recycler
@@ -271,6 +298,7 @@ public class InboxActivity extends AppCompatActivity {
         adapter = new EmailAdapter();
         recyclerView.setAdapter(adapter);
 
+
         swipeRefresh = findViewById(R.id.swipeRefresh);
         swipeRefresh.setOnRefreshListener(() -> {
             // Refresh the list the user is currently looking at
@@ -278,7 +306,11 @@ public class InboxActivity extends AppCompatActivity {
             SharedPreferences prefs = getSharedPreferences("prefs", MODE_PRIVATE);
             String token = prefs.getString("jwt", null);
             if (token != null) {
+              if (isOnline()) {
+                    new Thread(() -> pendingSyncManager.flush(token)).start();
+                }
                 // Kick a sync from server (if your VM does that)
+
                 viewModel.loadEmails(token);
             }
             if (LABEL_ALL_INBOXES.equals(currentLabel)) {
@@ -288,6 +320,7 @@ public class InboxActivity extends AppCompatActivity {
             }
             viewModel.refreshUnreadCounts();
         });
+
 
         // Observe emails: update list and stop spinner
         viewModel.getEmails().observe(this, emails -> {
@@ -311,6 +344,7 @@ public class InboxActivity extends AppCompatActivity {
             return false;
         });
 
+
         // Observe VM
         viewModel.getError().observe(this, msg -> {
             if (swipeRefresh.isRefreshing()) swipeRefresh.setRefreshing(false);
@@ -318,6 +352,7 @@ public class InboxActivity extends AppCompatActivity {
                 Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
             }
         });
+
 
         // Header avatar/user popup
         HeaderManager.setup(this, viewModel, avatarImageView, avatarLetterTextView);
@@ -343,11 +378,54 @@ public class InboxActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        // Rebuild dynamic labels (optional)
+
         NavigationView navigationView = findViewById(R.id.navigationView);
         loadUserLabels(navigationView);
+        loadLocalLabels(navigationView);
         viewModel.refreshUnreadCounts();
-        // No auto reload of emails here to avoid stomping current filtered list
+
+        SharedPreferences prefs = getSharedPreferences("prefs", MODE_PRIVATE);
+        String token = prefs.getString("jwt", null);
+
+        // NEW: flush pending operations first when online and JWT exists
+        if (token != null && isOnline()) {
+            Log.d(TAG, "onResume: online -> flushing pending ops");
+            new Thread(() -> {
+                try {
+                    pendingSyncManager.flush(token);
+                } catch (Exception e) {
+                    Log.e(TAG, "pending flush error: " + e.getMessage(), e);
+                }
+            }).start();
+        }
+
+        if (token != null) {
+            viewModel.loadEmails(token);
+        }
+
+    }
+
+    private void loadLabelInbox(String chosen) {
+        Log.d(TAG, "loadLabelInbox: chosen=" + chosen);
+        viewModel.loadEmailsByLabelLocal(chosen);
+
+        SharedPreferences prefs = getSharedPreferences("prefs", MODE_PRIVATE);
+        String token = prefs.getString("jwt", null);
+        if (token != null && isOnline()) {
+            Log.d(TAG, "loadLabelInbox: online -> fetching remote for " + chosen);
+            viewModel.loadEmailsByLabel(chosen);
+        } else {
+            Log.d(TAG, "loadLabelInbox: offline or missing token -> local only");
+        }
+    }
+
+    private boolean isOnline() {
+        ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (cm == null) return false;
+        NetworkCapabilities caps = cm.getNetworkCapabilities(cm.getActiveNetwork());
+        return caps != null && (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+                || caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
+                || caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET));
     }
 
     private void setBadge(MenuItem item, String text, int bgColor) {
@@ -386,7 +464,9 @@ public class InboxActivity extends AppCompatActivity {
                     Log.e("Labels", "Failed: " + response.code());
                     return;
                 }
-                String json = response.body().string();
+
+                String json = response.body() != null ? response.body().string() : "[]";
+
                 Log.d("Labels", "Got: " + json);
                 try {
                     JSONArray array = new JSONArray(json);
@@ -405,7 +485,8 @@ public class InboxActivity extends AppCompatActivity {
                         for (int i = 0; i < array.length(); i++) {
                             try {
                                 JSONObject labelObj = array.getJSONObject(i);
-                                String label = labelObj.getString("name");
+                                String label = labelObj.optString("name", "");
+                                if (label.isEmpty()) continue;
                                 MenuItem item = menu.add(R.id.dynamic_labels_group, Menu.NONE, Menu.NONE, label);
                                 item.setIcon(R.drawable.ic_label);
                                 item.setCheckable(true);
@@ -414,6 +495,7 @@ public class InboxActivity extends AppCompatActivity {
                                 Log.e("Labels", "Error parsing label: " + e.getMessage());
                             }
                         }
+                        loadLocalLabels(navigationView);
                     });
                 } catch (Exception e) {
                     Log.e("Labels", "Parse error: " + e.getMessage());
@@ -422,6 +504,40 @@ public class InboxActivity extends AppCompatActivity {
         });
     }
 
+
+    private void loadLocalLabels(NavigationView navigationView) {
+        SharedPreferences prefs = getSharedPreferences("prefs", MODE_PRIVATE);
+        String ownerId = prefs.getString("user_id", null);
+        if (ownerId == null) return;
+
+        new Thread(() -> {
+            try {
+                AppDatabase db = CreateLabelActivity.DbHolder.getInstance(getApplicationContext());
+                List<LabelEntity> localLabels = db.labelDao().getAllByOwner(ownerId);
+                if (localLabels == null || localLabels.isEmpty()) return;
+
+                runOnUiThread(() -> {
+                    Menu menu = navigationView.getMenu();
+                    HashSet<String> existing = new HashSet<>();
+                    for (int i = 0; i < menu.size(); i++) {
+                        MenuItem item = menu.getItem(i);
+                        if (item != null && item.getGroupId() == R.id.dynamic_labels_group && item.getTitle() != null) {
+                            existing.add(item.getTitle().toString().toLowerCase());
+                        }
+                    }
+
+                    for (LabelEntity le : localLabels) {
+                        String title = le.name != null ? le.name : "";
+                        if (title.isEmpty()) continue;
+                        if (existing.contains(title.toLowerCase())) continue;
+                        MenuItem item = menu.add(R.id.dynamic_labels_group, Menu.NONE, Menu.NONE, title);
+                        item.setIcon(R.drawable.ic_label);
+                        item.setCheckable(true);
+                    }
+                });
+            } catch (Exception ignored) { }
+        }).start();
+    }
     private void persistSelection() {
         getSharedPreferences("prefs", MODE_PRIVATE)
                 .edit()
