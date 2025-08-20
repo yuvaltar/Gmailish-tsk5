@@ -3,11 +3,12 @@ package com.example.gmailish.mail;
 import android.app.AlertDialog;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.view.View;
 import android.widget.EditText;
 import android.widget.ImageButton;
+import android.widget.PopupMenu;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.widget.PopupMenu;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.lifecycle.ViewModelProvider;
@@ -23,11 +24,15 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
+import dagger.hilt.android.AndroidEntryPoint;
+
+@AndroidEntryPoint
 public class MailViewActivity extends AppCompatActivity {
 
     private TextView senderText, recipientText, subjectText, contentText, timestampText, senderIcon;
     private ImageButton replyButton, forwardButton, starButton, deleteButton, archiveButton, menuButton, backButton;
     private MailViewModel viewModel;
+
     private String mailId;
     private boolean isStarred;
     private String jwtToken;
@@ -56,77 +61,53 @@ public class MailViewActivity extends AppCompatActivity {
         backButton = findViewById(R.id.backButton);
 
         viewModel = new ViewModelProvider(this).get(MailViewModel.class);
-        // initialize ViewModel with application context so it can access Room
-        viewModel.init(getApplicationContext());
 
         SharedPreferences prefs = getSharedPreferences("prefs", MODE_PRIVATE);
         jwtToken = prefs.getString("jwt", null);
+
         mailId = getIntent().getStringExtra("mailId");
 
         viewModel.mailData.observe(this, mail -> {
             if (mail != null) {
-                senderText.setText(mail.optString("senderName"));
-                recipientText.setText("To: " + mail.optString("recipientName") + " <" + mail.optString("recipientEmail") + ">");
-                subjectText.setText(mail.optString("subject"));
-                contentText.setText(mail.optString("content"));
-
-                String rawTime = mail.optString("timestamp");
-                try {
-                    String formatted = formatIso8601ToMonthDay(rawTime);
-                    timestampText.setText(formatted);
-                } catch (Exception e) {
-                    timestampText.setText(rawTime);
-                }
-
-                String senderName = mail.optString("senderName");
-                if (senderName != null && !senderName.isEmpty()) {
-                    senderIcon.setText(senderName.substring(0, 1).toUpperCase());
-                }
-
-                currentLabels = mail.optJSONArray("labels");
-                isStarred = currentLabels != null && currentLabels.toString().contains("starred");
-                updateStarIcon();
+                bindMailToViews(mail);
             }
         });
 
         viewModel.errorMessage.observe(this, msg ->
-                Toast.makeText(this, msg, Toast.LENGTH_SHORT).show());
+                Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+        );
 
-        viewModel.fetchMailById(mailId, jwtToken);
-
-        viewModel.markAsRead(mailId, jwtToken);
+        // OFFLINE-FIRST load and then refresh if online
+        viewModel.loadMailDetail(getApplicationContext(), mailId, jwtToken);
+        // Mark as read (network + local)
+        if (jwtToken != null && !jwtToken.isEmpty()) {
+            viewModel.markAsRead(mailId, jwtToken);
+        }
 
         replyButton.setOnClickListener(v ->
-                Toast.makeText(this, "Reply (not implemented yet)", Toast.LENGTH_SHORT).show());
+                Toast.makeText(this, "Reply (not implemented yet)", Toast.LENGTH_SHORT).show()
+        );
 
         forwardButton.setOnClickListener(v ->
-                Toast.makeText(this, "Forward (not implemented yet)", Toast.LENGTH_SHORT).show());
+                Toast.makeText(this, "Forward (not implemented yet)", Toast.LENGTH_SHORT).show()
+        );
 
         starButton.setOnClickListener(v -> {
             boolean willBeStarred = !isStarred;
-            // supply context so VM can update Room after server success
             viewModel.addOrRemoveLabel(mailId, "starred", jwtToken, willBeStarred, getApplicationContext());
             isStarred = willBeStarred;
             updateStarIcon();
         });
 
         deleteButton.setOnClickListener(v -> {
-            // Hard delete
             viewModel.deleteMail(mailId, jwtToken, getApplicationContext());
             Toast.makeText(this, "Deleted", Toast.LENGTH_SHORT).show();
             finish();
-
-            // If you prefer “move to trash”, replace with:
-            // removeAllInboxLabels(() -> {
-            //     viewModel.addLabel(mailId, "trash", jwtToken, getApplicationContext());
-            //     Toast.makeText(this, "Moved to Trash", Toast.LENGTH_SHORT).show();
-            //     finish();
-            // });
         });
 
         archiveButton.setOnClickListener(v -> {
-            removeAllInboxLabels(() -> {
-                viewModel.addLabel(mailId, "archive", jwtToken, getApplicationContext());
+            // Use moveToLabel flow directly to keep offline + pending consistent
+            viewModel.moveToLabelOfflineFirst(mailId, "archive", jwtToken, getApplicationContext(), () -> {
                 Toast.makeText(this, "Archived", Toast.LENGTH_SHORT).show();
                 finish();
             });
@@ -146,8 +127,7 @@ public class MailViewActivity extends AppCompatActivity {
                     showLabelAssignmentDialog();
                     return true;
                 } else if (id == R.id.menu_report_spam) {
-                    removeAllInboxLabels(() -> {
-                        viewModel.addLabel(mailId, "spam", jwtToken, getApplicationContext());
+                    viewModel.moveToLabelOfflineFirst(mailId, "spam", jwtToken, getApplicationContext(), () -> {
                         Toast.makeText(this, "Reported as spam", Toast.LENGTH_SHORT).show();
                         finish();
                     });
@@ -159,54 +139,53 @@ public class MailViewActivity extends AppCompatActivity {
         });
     }
 
+    private void bindMailToViews(JSONObject mail) {
+        senderText.setText(mail.optString("senderName"));
+        recipientText.setText("To: " + mail.optString("recipientName") + " <" + mail.optString("recipientEmail") + ">");
+        subjectText.setText(mail.optString("subject"));
+        contentText.setText(mail.optString("content"));
+
+        String rawTime = mail.optString("timestamp");
+        try {
+            String formatted = formatIso8601ToMonthDay(rawTime);
+            timestampText.setText(formatted);
+        } catch (Exception e) {
+            timestampText.setText(rawTime);
+        }
+
+        String senderName = mail.optString("senderName");
+        if (senderName != null && !senderName.isEmpty()) {
+            senderIcon.setText(senderName.substring(0, 1).toUpperCase());
+        } else {
+            senderIcon.setText("");
+        }
+
+        currentLabels = mail.optJSONArray("labels");
+        if (currentLabels == null) currentLabels = new JSONArray();
+        isStarred = containsLabel(currentLabels, "starred");
+        updateStarIcon();
+    }
+
+    private boolean containsLabel(JSONArray array, String label) {
+        if (array == null) return false;
+        for (int i = 0; i < array.length(); i++) {
+            if (label.equalsIgnoreCase(array.optString(i))) return true;
+        }
+        return false;
+    }
+
     private void updateStarIcon() {
-        // You may have a different filled/outline icon. Adjust as needed.
         starButton.setImageResource(isStarred ? R.drawable.ic_star_shine : R.drawable.ic_star);
     }
 
-    private void removeLabelsSequentially(List<String> labels, int index, Runnable onComplete) {
-        if (index >= labels.size()) {
-            runOnUiThread(onComplete);
-            return;
-        }
-        String label = labels.get(index);
-        viewModel.removeLabelWithCallback(mailId, label, jwtToken, () ->
-                removeLabelsSequentially(labels, index + 1, onComplete)
-        );
-    }
-
-    private void removeAllInboxLabels(Runnable onComplete) {
-        if (currentLabels == null) {
-            onComplete.run();
-            return;
-        }
-        List<String> labelsToRemove = new ArrayList<>();
-        for (int i = 0; i < currentLabels.length(); i++) {
-            try {
-                String label = currentLabels.getString(i);
-                if (!"starred".equalsIgnoreCase(label) && isInboxLabel(label)) {
-                    if ("inbox".equalsIgnoreCase(label)) {
-                        labelsToRemove.add("primary");
-                    } else {
-                        labelsToRemove.add(label);
-                    }
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-        removeLabelsSequentially(labelsToRemove, 0, onComplete);
-    }
-
     private void showMoveToDialog() {
-        String[] folderNames = {"Primary", "Promotions", "Social", "Updates", "Spam", "Trash", "Drafts", "Starred", "Important"};
-        String[] labelValues = {"primary", "promotions", "social", "updates", "spam", "trash", "drafts", "starred", "important"};
+        String[] folderNames = {"Primary", "Promotions", "Social", "Updates", "Spam", "Trash", "Drafts", "Starred", "Important", "Archive"};
+        String[] labelValues = {"primary", "promotions", "social", "updates", "spam", "trash", "drafts", "starred", "important", "archive"};
         new AlertDialog.Builder(MailViewActivity.this)
                 .setTitle("Move to")
                 .setItems(folderNames, (dialog, which) -> {
                     String targetLabel = labelValues[which];
-                    removeAllInboxLabels(() -> {
-                        viewModel.addLabel(mailId, targetLabel, jwtToken, getApplicationContext());
+                    viewModel.moveToLabelOfflineFirst(mailId, targetLabel, jwtToken, getApplicationContext(), () -> {
                         runOnUiThread(() -> {
                             Toast.makeText(this, "Moved to " + folderNames[which], Toast.LENGTH_SHORT).show();
                             finish();
@@ -231,7 +210,7 @@ public class MailViewActivity extends AppCompatActivity {
                         showNewLabelInput();
                     } else {
                         String selectedLabel = options.get(which);
-                        // IMPORTANT: addLabel requires Context as 4th arg
+                        // For "label as", keep current inbox labels and add another tag
                         viewModel.addLabel(mailId, selectedLabel, jwtToken, getApplicationContext());
                         Toast.makeText(this, "Added to " + selectedLabel, Toast.LENGTH_SHORT).show();
                     }
@@ -249,7 +228,6 @@ public class MailViewActivity extends AppCompatActivity {
                 .setPositiveButton("Create", (dialog, which) -> {
                     String newLabel = input.getText().toString().trim();
                     if (!newLabel.isEmpty()) {
-                        // IMPORTANT: addLabel requires Context as 4th arg
                         viewModel.addLabel(mailId, newLabel, jwtToken, getApplicationContext());
                         Toast.makeText(this, "Added to " + newLabel, Toast.LENGTH_SHORT).show();
                     } else {
@@ -260,31 +238,19 @@ public class MailViewActivity extends AppCompatActivity {
                 .show();
     }
 
-    private boolean isInboxLabel(String label) {
-        return label.equalsIgnoreCase("primary") || label.equalsIgnoreCase("inbox") ||
-                label.equalsIgnoreCase("promotions") || label.equalsIgnoreCase("social") ||
-                label.equalsIgnoreCase("updates") || label.equalsIgnoreCase("trash") ||
-                label.equalsIgnoreCase("drafts") || label.equalsIgnoreCase("spam") ||
-                label.equalsIgnoreCase("archive") || label.equalsIgnoreCase("important");
-    }
-
-    // Helper: Formats ISO-8601 timestamps to "MMM d" without using java.time on API < 26.
-    // Supports "2025-08-10T12:34:56Z" and offsets like "+02:00".
     private String formatIso8601ToMonthDay(String iso) throws Exception {
         if (iso == null || iso.isEmpty()) throw new IllegalArgumentException("empty timestamp");
         if (android.os.Build.VERSION.SDK_INT >= 26) {
-            // Prefer modern API on newer devices
             java.time.OffsetDateTime odt = java.time.OffsetDateTime.parse(iso);
             Date date = Date.from(odt.toInstant());
             return new SimpleDateFormat("MMM d", Locale.getDefault()).format(date);
         } else {
-            // Normalize offset by removing the colon in timezone if present, e.g. +02:00 -> +0200
             String normalized = iso;
             int plus = Math.max(iso.lastIndexOf('+'), iso.lastIndexOf('-'));
             if (plus > 10 && iso.length() >= plus + 6 && iso.charAt(iso.length() - 3) == ':') {
+                // Normalize timezone like +03:00 -> +0300
                 normalized = iso.substring(0, iso.length() - 3) + iso.substring(iso.length() - 2);
             }
-            // Choose pattern depending on presence of milliseconds and timezone
             boolean hasMillis = normalized.contains(".");
             boolean hasZone = normalized.endsWith("Z") || normalized.matches(".*[\\+\\-]\\d{4}$");
             String pattern;

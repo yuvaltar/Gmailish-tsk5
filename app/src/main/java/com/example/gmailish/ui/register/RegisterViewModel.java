@@ -1,17 +1,14 @@
 package com.example.gmailish.ui.register;
 
+import android.text.TextUtils;
+import android.util.Log;
+
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 
-import android.content.Context;
-
-import androidx.room.Room;
-
-import com.example.gmailish.data.db.AppDatabase;
-import com.example.gmailish.data.dao.UserDao;
 import com.example.gmailish.data.entity.UserEntity;
+import com.example.gmailish.data.repository.UserRepository;
 
-import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
@@ -19,7 +16,13 @@ import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
+import javax.inject.Inject;
+
+import dagger.hilt.android.lifecycle.HiltViewModel;
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.MediaType;
@@ -29,215 +32,213 @@ import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 
-
-
+@HiltViewModel
 public class RegisterViewModel extends ViewModel {
-    public MutableLiveData<String> firstNameError = new MutableLiveData<>();
-    public MutableLiveData<String> lastNameError = new MutableLiveData<>();
-    public MutableLiveData<String> dobError = new MutableLiveData<>();
-    public MutableLiveData<String> passwordError = new MutableLiveData<>();
-    public MutableLiveData<String> message = new MutableLiveData<>();
-    public MutableLiveData<Boolean> registrationSuccess = new MutableLiveData<>();
 
+    private static final String TAG = "RegisterVM";
 
-    private final OkHttpClient client = new OkHttpClient.Builder()
-            .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-            .writeTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-            .build();
+    public final MutableLiveData<String> firstNameError = new MutableLiveData<>();
+    public final MutableLiveData<String> lastNameError = new MutableLiveData<>();
+    public final MutableLiveData<String> dobError = new MutableLiveData<>();
+    public final MutableLiveData<String> passwordError = new MutableLiveData<>();
+    public final MutableLiveData<String> message = new MutableLiveData<>();
+    public final MutableLiveData<Boolean> registrationSuccess = new MutableLiveData<>();
 
-    // Minimal in-file request holder
-    private static class RegisterRequest {
-        String firstName;
-        String lastName;
-        Date dob;
-        String gender;
-        String username;
-        String password;
-    }
+    private String firstName;
+    private String lastName;
+    private Date birthdate;
+    private String gender;
+    private String username;
+    private String password;
 
-    private final RegisterRequest request = new RegisterRequest();
+    private final OkHttpClient http = new OkHttpClient();
+    // Fixed: Changed to the correct endpoint that matches your backend
+    private static final String REGISTER_URL = "http://10.0.2.2:3000/api/users";
+    private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 
-    // Room references (built lazily without Hilt)
-    private AppDatabase db;
-    private UserDao userDao;
+    private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
+    private final UserRepository userRepository;
 
-    // Call this once from Activity with applicationContext before using register()
-    public void setDatabaseContext(Context appContext) {
-        if (db == null) {
-            db = Room.databaseBuilder(appContext, AppDatabase.class, "gmailish.db")
-                    .fallbackToDestructiveMigration() // dev only
-                    .build();
-            userDao = db.userDao();
-        }
+    @Inject
+    public RegisterViewModel(UserRepository userRepository) {
+        this.userRepository = userRepository;
+        Log.d(TAG, "RegisterViewModel created with repository: " + (userRepository != null));
     }
 
     public boolean setName(String first, String last) {
-        boolean valid = true;
-        if (first == null || first.trim().isEmpty()) {
-            firstNameError.setValue("First name is required");
-            valid = false;
-        } else {
-            firstNameError.setValue(null);
-            request.firstName = first;
-        }
-
-        if (last == null || last.trim().isEmpty()) {
-            lastNameError.setValue("Last name is required");
-            valid = false;
-        } else {
-            lastNameError.setValue(null);
-            request.lastName = last;
-        }
-        return valid;
+        firstNameError.setValue(null);
+        lastNameError.setValue(null);
+        boolean ok = true;
+        if (TextUtils.isEmpty(first)) { firstNameError.setValue("First name is required"); ok = false; }
+        if (TextUtils.isEmpty(last))  { lastNameError.setValue("Last name is required"); ok = false; }
+        if (!ok) return false;
+        this.firstName = first.trim();
+        this.lastName = last.trim();
+        Log.d(TAG, "Name set: " + firstName + " " + lastName);
+        return true;
     }
 
-    public boolean setDobAndGender(Date dob, String g) {
-        boolean valid = true;
-        if (dob == null){
-            dobError.setValue("Please enter your DOB");
-            valid = false;
-        } else {
-            dobError.setValue(null);
-            request.dob = dob;
+    public boolean setDobAndGender(Date dob, String gender) {
+        dobError.setValue(null);
+        if (dob == null) {
+            dobError.setValue("Date of birth is required");
+            return false;
         }
-        if (g == null || g.trim().isEmpty()) {
-            message.setValue("Please select a gender");
-            valid = false;
-        } else {
-            request.gender = g.trim();
-        }
-        return valid;
+        this.birthdate = dob;
+        this.gender = gender != null ? gender.trim() : "";
+        Log.d(TAG, "DOB and gender set: " + birthdate + ", " + this.gender);
+        return true;
     }
 
-    private String formatDate(Date date) {
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
-        return sdf.format(date);
-    }
-
-    public boolean setUsernameAndPassword(String user, String pwd, String confirm) {
-        boolean valid = true;
-        if (user == null || user.trim().isEmpty()) {
-            message.setValue("Username is required");
-            valid = false;
-        } else {
-            request.username = user.trim();
+    public boolean setUsernameAndPassword(String username, String pass, String confirm) {
+        passwordError.setValue(null);
+        if (TextUtils.isEmpty(username) || username.length() < 3) {
+            message.setValue("Username must be at least 3 characters");
+            return false;
         }
-
-        if (pwd == null || pwd.length() < 8) {
+        if (TextUtils.isEmpty(pass) || pass.length() < 8) {
             passwordError.setValue("Password must be at least 8 characters");
-            valid = false;
-        } else {
-            passwordError.setValue(null);
-            request.password = pwd;
+            return false;
         }
-
-        if (pwd == null || !pwd.equals(confirm)) {
+        if (!TextUtils.equals(pass, confirm)) {
             passwordError.setValue("Passwords do not match");
-            valid = false;
+            return false;
         }
-        return valid;
+        this.username = username.trim();
+        this.password = pass;
+        Log.d(TAG, "Username and password set: " + this.username);
+        return true;
     }
 
     public void register(File imageFile) {
-        if (db == null || userDao == null) {
-            message.postValue("Internal error: database not initialized");
-            return;
-        }
-        if (request.firstName == null || request.lastName == null || request.username == null
-                || request.gender == null || request.password == null || request.dob == null) {
-            message.postValue("Please complete all fields");
-            return;
-        }
+        Log.d(TAG, "Starting registration process...");
+        registrationSuccess.setValue(false);
 
-        MultipartBody.Builder formBuilder = new MultipartBody.Builder()
-                .setType(MultipartBody.FORM)
-                .addFormDataPart("firstName", request.firstName)
-                .addFormDataPart("lastName", request.lastName)
-                .addFormDataPart("username", request.username)
-                .addFormDataPart("gender", request.gender)
-                .addFormDataPart("password", request.password)
-                .addFormDataPart("birthdate", formatDate(request.dob));
-
-        if (imageFile != null && imageFile.exists()) {
-            formBuilder.addFormDataPart("picture", imageFile.getName(),
-                    RequestBody.create(imageFile, MediaType.parse("image/*")));
+        // Convert birthdate to YYYY-MM-DD format as expected by backend
+        String birthdateStr = "";
+        if (birthdate != null) {
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
+            birthdateStr = sdf.format(birthdate);
         }
 
-        MultipartBody requestBody = formBuilder.build();
+        Log.d(TAG, "Registration data - firstName: " + firstName + ", lastName: " + lastName +
+                ", username: " + username + ", gender: " + gender +
+                ", birthdate: " + birthdateStr + ", hasImage: " + (imageFile != null && imageFile.exists()));
 
-        Request httpRequest = new Request.Builder()
-                .url("http://10.0.2.2:3000/api/users")
-                .post(requestBody)
-                .build();
+        try {
+            final Request request;
 
-        client.newCall(httpRequest).enqueue(new Callback() {
-            @Override
-            public void onFailure(Call call, IOException e) {
-                message.postValue("Network error: " + e.getMessage());
+            // Always use multipart form data to match backend expectations
+            MultipartBody.Builder mb = new MultipartBody.Builder()
+                    .setType(MultipartBody.FORM)
+                    .addFormDataPart("firstName", safe(firstName))
+                    .addFormDataPart("lastName", safe(lastName))
+                    .addFormDataPart("username", safe(username))
+                    .addFormDataPart("password", safe(password))
+                    .addFormDataPart("gender", safe(gender))
+                    .addFormDataPart("birthdate", birthdateStr);
+
+            // Add image file if present
+            if (imageFile != null && imageFile.exists()) {
+                Log.d(TAG, "Adding image to multipart request");
+                mb.addFormDataPart(
+                        "picture",
+                        imageFile.getName(),
+                        RequestBody.create(MediaType.parse("image/*"), imageFile)
+                );
             }
 
-            @Override
-            public void onResponse(Call call, Response response) throws IOException {
-                try (Response r = response) {
-                    if (!r.isSuccessful()) {
-                        message.postValue("Server error: " + r.code() + " - " + (r.body() != null ? r.body().string() : ""));
-                        return;
-                    }
-                    String body = r.body() != null ? r.body().string() : "{}";
-                    try {
-                        JSONObject json = new JSONObject(body);
+            request = new Request.Builder()
+                    .url(REGISTER_URL)
+                    .post(mb.build())
+                    .build();
 
-                        // Map JSON -> UserEntity (manual to avoid adding a mapper call from Java)
-                        // Expected fields: id, firstName, lastName, username, email, gender, birthdate, picture
-                        // Adjust keys if your backend differs.
-                        String id = json.optString("id");
-                        String firstName = json.optString("firstName", request.firstName);
-                        String lastName = json.optString("lastName", request.lastName);
-                        String username = json.optString("username", request.username);
-                        String email = json.optString("email", "");
-                        String gender = json.optString("gender", request.gender);
-                        String picture = json.optString("picture", "");
+            Log.d(TAG, "Making request to: " + REGISTER_URL);
+            http.newCall(request).enqueue(new Callback() {
+                @Override
+                public void onFailure(Call call, IOException e) {
+                    Log.e(TAG, "Register network error: " + e.getMessage(), e);
+                    message.postValue("Network error: " + e.getMessage());
+                }
 
-                        // birthdate: server may send ISO date or millis; we’ll store original DOB from request
-                        Date birthdate = request.dob;
+                @Override
+                public void onResponse(Call call, Response response) throws IOException {
+                    try (Response r = response) {
+                        String body = r.body() != null ? r.body().string() : "{}";
+                        Log.d(TAG, "Register response code=" + r.code() + " body=" + body);
 
-                        UserEntity entity = new UserEntity(
-                                id,
-                                firstName,
-                                lastName,
-                                username,
-                                email,
-                                gender,
-                                birthdate,
-                                picture
-                        );
-
-                        // Save to Room off the main thread
-                        new Thread(() -> {
+                        if (!r.isSuccessful()) {
+                            // Parse error message from backend
+                            String errorMsg = "Registration failed: " + r.code();
                             try {
-                                userDao.upsert(entity);
-
-
-                                // Immediate readback to verify write
-                                UserEntity check = userDao.getByUsername(entity.getUsername());
-                                if (check != null) {
-                                    registrationSuccess.postValue(true);
-                                    message.postValue("Saved to Room: " + check.getUsername());
-                                } else {
-                                    message.postValue("Insert done but readback returned null");
-                                }
-                            } catch (Exception ex) {
-                                message.postValue("DB error: " + ex.getMessage());
-                                ex.printStackTrace();
+                                JSONObject errorObj = new JSONObject(body);
+                                String backendError = errorObj.optString("error", "Unknown error");
+                                errorMsg = backendError;
+                            } catch (Exception e) {
+                                Log.e(TAG, "Failed to parse error response", e);
                             }
-                        }).start();
+                            message.postValue(errorMsg);
+                            return;
+                        }
 
-                    } catch (JSONException ex) {
-                        message.postValue("Parse error: " + ex.getMessage());
+                        final JSONObject obj;
+                        try {
+                            obj = new JSONObject(body);
+                        } catch (Exception e) {
+                            Log.e(TAG, "Failed to parse server response: " + body, e);
+                            message.postValue("Bad server response");
+                            return;
+                        }
+
+                        // Extract data from response - backend returns: id, username, email
+                        String id = obj.optString("id", null);
+                        if (id == null || id.isEmpty()) {
+                            id = UUID.randomUUID().toString();
+                            Log.d(TAG, "No ID from server, generated: " + id);
+                        }
+
+                        String uname = obj.optString("username", username);
+                        String email = obj.optString("email", null);
+                        String picture = null; // Backend doesn't return picture URL in register response
+
+                        final UserEntity entity = new UserEntity(id, uname, email, picture);
+                        Log.d(TAG, "Creating UserEntity -> id=" + id + ", username=" + uname + ", email=" + email);
+
+                        ioExecutor.execute(() -> {
+                            try {
+                                Log.d(TAG, "Attempting to save user to Room database...");
+                                userRepository.saveUser(entity);
+                                Log.d(TAG, "UserEntity successfully saved to Room");
+
+                                message.postValue("Registration successful");
+                                registrationSuccess.postValue(true);
+                            } catch (Exception e) {
+                                Log.e(TAG, "Room save error", e);
+                                message.postValue("Registration succeeded but failed to save locally: " + e.getMessage());
+                            }
+                        });
+
+                    } catch (Exception e) {
+                        Log.e(TAG, "register() response processing error", e);
+                        message.postValue("Unexpected error: " + e.getMessage());
                     }
                 }
-            }
-        });
+            });
+        } catch (Exception e) {
+            Log.e(TAG, "register() outer error", e);
+            message.setValue("Unexpected error: " + e.getMessage());
+        }
+    }
+
+    private String safe(String s) {
+        return s == null ? "" : s;
+    }
+
+    @Override
+    protected void onCleared() {
+        super.onCleared();
+        if (ioExecutor != null && !ioExecutor.isShutdown()) {
+            ioExecutor.shutdown();
+        }
     }
 }

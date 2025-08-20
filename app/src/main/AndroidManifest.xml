@@ -1,11 +1,9 @@
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
-
+<?xml version="1.0" encoding="utf-8"?> <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
-        android:name=".GmailishApp"
+        android:name=".utils.GmailishApp"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -17,7 +15,6 @@
         android:theme="@style/Theme.Gmailish"
         tools:targetApi="31">
 
-        <!-- Launcher -->
         <activity
             android:name=".ui.register.RegisterActivity"
             android:exported="true">
@@ -32,6 +29,5 @@
         <activity android:name=".ui.inbox.InboxActivity" />
         <activity android:name=".ui.compose.ComposeActivity" />
         <activity android:name=".mail.MailViewActivity" />
-
     </application>
 </manifest>
