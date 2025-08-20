@@ -16,11 +16,10 @@ import dagger.hilt.android.AndroidEntryPoint;
 @AndroidEntryPoint
 public class ComposeActivity extends AppCompatActivity {
 
-
     private static final String TAG = "ComposeSave";
 
     private EditText toField, subjectField, bodyField;
-    private ImageView sendButton, backButton, attachButton;
+    private ImageView sendButton, backButton;
     private ComposeViewModel viewModel;
 
     @Override
@@ -33,12 +32,11 @@ public class ComposeActivity extends AppCompatActivity {
         bodyField = findViewById(R.id.bodyField);
         sendButton = findViewById(R.id.sendButton);
         backButton = findViewById(R.id.backButton);
-        attachButton = findViewById(R.id.attachButton);
+
+        // Prefill from MailViewActivity (Reply/Forward)
+        applyPrefillFromExtras();
 
         backButton.setOnClickListener(v -> finish());
-        attachButton.setOnClickListener(v ->
-                Toast.makeText(this, "Attach button clicked", Toast.LENGTH_SHORT).show()
-        );
 
         viewModel = new ViewModelProvider(this).get(ComposeViewModel.class);
 
@@ -52,7 +50,93 @@ public class ComposeActivity extends AppCompatActivity {
         // IMPORTANT: Do not write to Room here. ViewModel handles all persistence.
         viewModel.sendSuccess.observe(this, payload -> {
             Log.d(TAG, "sendSuccess observed. payload=" + payload);
-            Toast.makeText(this, "Mail sent successfully", Toast.LENGTH_SHORT).show();
+
+            if (payload == null || payload.isEmpty()) return;
+
+            try {
+                JSONObject json = new JSONObject(payload);
+                String to = json.optString("to");
+                String subject = json.optString("subject");
+                String content = json.optString("content");
+                String serverMailId = json.optString("id", null);
+
+                Log.d(TAG, "Parsed payload -> to=" + to + ", subject=" + subject +
+                        ", len(content)=" + (content != null ? content.length() : 0) +
+                        ", serverId=" + serverMailId);
+
+                // Current user (saved when loading /users/me)
+                SharedPreferences sp = getSharedPreferences("prefs", MODE_PRIVATE);
+                String senderId = sp.getString("user_id", null);
+                String senderName = sp.getString("username", "Me");
+                Log.d(TAG, "Sender from prefs -> id=" + senderId + ", name=" + senderName);
+
+                if (senderId != null) {
+                    String baseId = (serverMailId != null && !serverMailId.isEmpty())
+                            ? serverMailId
+                            : UUID.randomUUID().toString();
+                    Date now = new Date();
+
+                    // Fallback recipient identity: use email
+                    String recipientId = to;
+                    String recipientName = to;
+
+                    MailEntity senderMail = new MailEntity(
+                            baseId + "_s",
+                            senderId,
+                            senderName != null ? senderName : "Me",
+                            recipientId,
+                            recipientName,
+                            to,
+                            subject,
+                            content,
+                            now,
+                            senderId,   // owner is the sender
+                            true,       // read for sender
+                            false
+                    );
+
+                    MailEntity recipientMail = new MailEntity(
+                            baseId + "_r",
+                            senderId,
+                            senderName != null ? senderName : "Me",
+                            recipientId,
+                            recipientName,
+                            to,
+                            subject,
+                            content,
+                            now,
+                            recipientId, // owner is the recipient
+                            false,       // unread for recipient
+                            false
+                    );
+
+                    Log.d(TAG, "Prepared entities. senderId=" + senderMail.getId() +
+                            ", recipientId=" + recipientMail.getId());
+
+                    Executors.newSingleThreadExecutor().execute(() -> {
+                        try {
+                            Log.d(TAG, "Opening DB singleton...");
+                            AppDatabase db = AppDatabase.Companion.getInstance(getApplicationContext());
+                            Log.d(TAG, "DB opened. Creating repository...");
+                            MailRepository repo = new MailRepository(db.mailDao(), db.labelDao(), db.mailLabelDao());
+
+                            Log.d(TAG, "Saving mails...");
+                            repo.saveMailsBlocking(Arrays.asList(senderMail, recipientMail));
+                            Log.d(TAG, "Save completed.");
+                        } catch (Throwable e) {
+                            Log.e(TAG, "Room save error", e);
+                        }
+                    });
+                } else {
+                    Log.w(TAG, "SenderId is null. Not saving to Room.");
+                }
+
+                Toast.makeText(this, "Mail sent successfully", Toast.LENGTH_SHORT).show();
+            } catch (Exception e) {
+                Log.e(TAG, "Save to Room parse error", e);
+            }
+
+            finish();
         });
 
         sendButton.setOnClickListener(v -> {
@@ -63,5 +147,56 @@ public class ComposeActivity extends AppCompatActivity {
                     + ", len(content)=" + (content != null ? content.length() : 0));
             viewModel.sendEmail(this, to, subject, content);
         });
+    }
+
+    private void applyPrefillFromExtras() {
+        if (getIntent() == null) return;
+
+        String mode    = getIntent().getStringExtra("EXTRA_MODE");   // "reply" or "forward"
+        String to      = getIntent().getStringExtra("EXTRA_TO");
+        String subject = getIntent().getStringExtra("EXTRA_SUBJECT");
+        String body    = getIntent().getStringExtra("EXTRA_BODY");
+
+        // >>> FIX: ensure "to" is an email. If it's a plain name, append "@gmailish.com".
+        if (to != null && !to.isEmpty()) {
+            toField.setText(normalizeToEmail(to));
+        }
+        if (subject != null) subjectField.setText(subject);
+        if (body != null) bodyField.setText(body);
+
+        // Optional UX: focus the right field
+        if ("forward".equals(mode)) {
+            toField.requestFocus();          // user must choose a recipient
+        } else if ("reply".equals(mode)) {
+            bodyField.requestFocus();
+            bodyField.setSelection(bodyField.getText().length());
+        }
+    }
+
+    /**
+     * Convert various "to" values into an email form.
+     * - "Name <user@host>" -> "user@host"
+     * - already an email -> unchanged
+     * - plain name -> "name@gmailish.com"
+     */
+    private String normalizeToEmail(String raw) {
+        if (raw == null) return "";
+        String s = raw.trim();
+
+        // Case: "Name <email@host>"
+        int lt = s.indexOf('<');
+        int gt = s.indexOf('>');
+        if (lt >= 0 && gt > lt) {
+            String inside = s.substring(lt + 1, gt).trim();
+            if (inside.contains("@")) return inside;
+        }
+
+        // Already looks like an email
+        if (s.contains("@")) return s;
+
+        // Plain name -> sanitize lightly and append domain
+        String local = s.toLowerCase()
+                .replaceAll("\\s+", ".");        // spaces -> dots
+        return local + "@gmailish.com";
     }
 }

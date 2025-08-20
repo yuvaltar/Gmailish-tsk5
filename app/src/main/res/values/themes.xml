@@ -1,10 +1,15 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. -->
     <style name="Base.Theme.Gmailish" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Light status bar background -->
-        <item name="android:statusBarColor">#FFFFFF</item>
-        <!-- Make battery/time icons black -->
+        <!-- Let Material pick the right surface color for status bar -->
+        <item name="android:statusBarColor">?attr/colorSurface</item>
+        <!-- Icons dark only in light mode -->
         <item name="android:windowLightStatusBar">true</item>
+
+        <!-- Bind Material attributes to our colors -->
+        <item name="colorSurface">@color/app_surface_light</item>
+        <item name="colorSurfaceVariant">@color/app_surface_variant_light</item>
+        <item name="colorOnSurface">@color/app_on_surface_light</item>
     </style>
 
     <style name="Theme.Gmailish" parent="Base.Theme.Gmailish" />

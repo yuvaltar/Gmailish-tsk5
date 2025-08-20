@@ -12,4 +12,8 @@
     <color name="gmail_primary_text">#202124</color>
     <color name="gmail_hint_text">#80868B</color>
     <color name="gmail_compose_purple">#6200EE</color>
+    <color name="app_bg_light">#FFFFFF</color>
+    <color name="app_surface_variant_light">#F2F3F6</color>  <!-- slightly darker than white -->
+    <color name="app_surface_light">#FFFFFF</color>
+    <color name="app_on_surface_light">#202124</color>
 </resources>

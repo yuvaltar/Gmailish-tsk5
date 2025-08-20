@@ -3,8 +3,8 @@
     android:orientation="vertical"
     android:padding="12dp"
     android:background="@drawable/rounded_card"
-    android:layout_height="wrap_content"
-    android:layout_width="200dp">
+    android:layout_width="200dp"
+    android:layout_height="wrap_content">
 
 <TextView
 android:id="@+id/profileUsername"
@@ -12,13 +12,13 @@ android:layout_width="wrap_content"
 android:layout_height="wrap_content"
 android:textStyle="bold"
 android:textSize="16sp"
-android:textColor="@color/black"/>
+android:textColor="?attr/colorOnSurface" />
 
 <View
 android:layout_width="match_parent"
 android:layout_height="1dp"
 android:layout_marginVertical="8dp"
-android:background="#DDD"/>
+android:background="?attr/colorOutline" />
 
 <TextView
 android:id="@+id/logoutBtn"
@@ -26,5 +26,9 @@ android:layout_width="match_parent"
 android:layout_height="wrap_content"
 android:text="@string/logout"
 android:paddingVertical="8dp"
-android:gravity="center_horizontal" />
+android:gravity="center_horizontal"
+android:clickable="true"
+android:focusable="true"
+android:background="?attr/selectableItemBackground"
+android:textColor="?attr/colorPrimary" />
     </LinearLayout>

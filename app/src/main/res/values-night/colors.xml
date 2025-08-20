@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="app_bg_light">#121212</color>        <!-- page background -->
+    <color name="app_surface_light">#1E1E1E</color>   <!-- cards/sidebar/top bar -->
+    <color name="app_on_surface_light">#EDEDED</color>
+    <color name="app_surface_variant_light">#242424</color>  <!-- navbar a bit darker -->
+</resources>

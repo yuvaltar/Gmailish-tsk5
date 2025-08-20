@@ -62,13 +62,4 @@
         android:title="Create new"
         android:icon="@drawable/ic_add_plus" />
 
-
-
-    <group>
-        <item android:id="@+id/nav_calendar"  android:title="Calendar"          android:icon="@drawable/ic_calendar" />
-        <item android:id="@+id/nav_contacts"  android:title="Contacts"          android:icon="@drawable/ic_label" />
-        <item android:id="@+id/nav_settings"  android:title="Settings"          android:icon="@drawable/ic_settings" />
-        <item android:id="@+id/nav_help"      android:title="Help &amp; feedback" android:icon="@drawable/ic_help_feedback" />
-    </group>
-
 </menu>
