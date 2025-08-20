@@ -30,8 +30,6 @@ import java.util.List;
 
 import dagger.hilt.android.AndroidEntryPoint;
 
-@AndroidEntryPoint
-
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -43,7 +41,7 @@ import okhttp3.Response;
 /**
  * MailViewActivity – reply now fills the real sender email and the reply/forward boxes are clickable.
  */
-
+@AndroidEntryPoint
 public class MailViewActivity extends AppCompatActivity {
 
     private TextView senderText, recipientText, subjectText, contentText, timestampText, senderIcon;
@@ -89,7 +87,6 @@ public class MailViewActivity extends AppCompatActivity {
 
         viewModel = new ViewModelProvider(this).get(MailViewModel.class);
 
-        viewModel.init(getApplicationContext());
 
         SharedPreferences prefs = getSharedPreferences("prefs", MODE_PRIVATE);
         jwtToken = prefs.getString("jwt", null);
@@ -533,11 +530,6 @@ public class MailViewActivity extends AppCompatActivity {
                 labelsToRemove.add("inbox".equalsIgnoreCase(label) ? "primary" : label);
             }
         }
-        return false;
-    }
-
-    private void updateStarIcon() {
-        starButton.setImageResource(isStarred ? R.drawable.ic_star_shine : R.drawable.ic_star);
     }
 
     private void showMoveToDialog() {

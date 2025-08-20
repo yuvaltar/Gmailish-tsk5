@@ -219,7 +219,7 @@ public class EmailAdapter extends RecyclerView.Adapter<EmailAdapter.EmailViewHol
        Timestamp formatting
        ========================= */
 
-    private String (String raw) {
+    private String formatListTimestamp (String raw) {
         if (raw == null || raw.isEmpty()) return "";
         try {
             if (Build.VERSION.SDK_INT >= 26) {
