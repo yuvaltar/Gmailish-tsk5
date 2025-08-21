@@ -515,7 +515,8 @@ public class InboxActivity extends AppCompatActivity {
                                 MenuItem item = menu.add(R.id.dynamic_labels_group, Menu.NONE, Menu.NONE, raw);
                                 item.setIcon(R.drawable.ic_label);
                                 item.setCheckable(true);
-                                item.setActionView(R.layout.menu_badge);       // so badges work on customs
+                                item.setActionView(R.layout.menu_badge);
+                                setNumericBadge(item, 0, null);
                             } catch (Exception e) {
                                 Log.e("Labels", "Error parsing label: " + e.getMessage());
                             }
@@ -565,6 +566,8 @@ public class InboxActivity extends AppCompatActivity {
                         MenuItem item = menu.add(R.id.dynamic_labels_group, Menu.NONE, Menu.NONE, title);
                         item.setIcon(R.drawable.ic_label);
                         item.setCheckable(true);
+                        item.setActionView(R.layout.menu_badge);
+                        setNumericBadge(item, 0, null);
                         existing.add(lc); // prevent further dupes in same run
                     }
                 });

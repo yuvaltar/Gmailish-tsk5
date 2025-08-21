@@ -12,4 +12,5 @@
     android:textStyle="bold"
     android:textSize="12sp"
     android:textColor="#1F1F1F"
-    android:background="@drawable/nav_badge_bg" />
+    android:background="@drawable/nav_badge_bg"
+    android:visibility="gone"/>
