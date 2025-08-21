@@ -3,16 +3,15 @@ package com.example.gmailish.ui.inbox;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-
-import android.util.Log;
-
 import android.os.Build;
-
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.TextView;
+import com.example.gmailish.data.db.AppDbProvider;
+import com.example.gmailish.data.db.AppDatabase;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
@@ -20,6 +19,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.example.gmailish.R;
 import com.example.gmailish.mail.MailViewActivity;
 import com.example.gmailish.model.Email;
+import com.example.gmailish.ui.compose.ComposeActivity;
 
 import org.json.JSONObject;
 
@@ -33,11 +33,8 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
-
-import java.util.concurrent.Executors;
-
 import java.util.Locale;
-
+import java.util.concurrent.Executors;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -49,12 +46,20 @@ import okhttp3.Response;
 
 public class EmailAdapter extends RecyclerView.Adapter<EmailAdapter.EmailViewHolder> {
 
-
     private static final String TAG = "EmailAdapter";
-    private final List<Email> emailList = new ArrayList<>();
 
+    private final List<Email> emailList = new ArrayList<>();
     private final OkHttpClient http = new OkHttpClient();
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
+
+    // Which label we are currently showing (e.g., "inbox", "starred", "drafts").
+    private String currentLabel = null;
+
+    /** Call this from your fragment/activity when switching lists, e.g. setCurrentLabel("drafts"). */
+    public void setCurrentLabel(String label) {
+        this.currentLabel = label != null ? label.toLowerCase(Locale.ROOT) : null;
+        notifyDataSetChanged();
+    }
 
     public void updateData(List<Email> newEmails) {
         emailList.clear();
@@ -92,42 +97,60 @@ public class EmailAdapter extends RecyclerView.Adapter<EmailAdapter.EmailViewHol
 
         String senderName = email.senderName != null ? email.senderName : "";
         holder.sender.setText(senderName);
-        holder.subject.setText(email.subject != null ? email.subject : "");
+
+        boolean viewingDrafts = "drafts".equalsIgnoreCase(currentLabel);
+        holder.subject.setText(viewingDrafts
+                ? "[Draft] " + (email.subject != null ? email.subject : "")
+                : (email.subject != null ? email.subject : ""));
+
         holder.content.setText(email.content != null ? email.content : "");
 
-
-        // Format timestamp: today -> HH:mm, else -> MMM d
         String prettyTs = formatListTimestamp(email.timestamp);
         holder.timestamp.setText(prettyTs);
 
-        // First letter avatar
         holder.senderIcon.setText(senderName.isEmpty()
                 ? "?"
-                : senderName.substring(0, 1).toUpperCase());
+                : senderName.substring(0, 1).toUpperCase(Locale.ROOT));
 
-        // Read/unread visual
         holder.itemView.setAlpha(email.read ? 0.6f : 1.0f);
         setStarIcon(holder.starIcon, email.starred);
 
-        holder.starIcon.setOnClickListener(v -> {
-            boolean newState = !email.starred;
-            email.starred = newState;
-            int p = holder.getAdapterPosition();
-            if (p != RecyclerView.NO_POSITION) notifyItemChanged(p);
+        if (viewingDrafts) {
+            // Don’t allow starring in Drafts
+            holder.starIcon.setAlpha(0.3f);
+            holder.starIcon.setOnClickListener(null);
+        } else {
+            holder.starIcon.setAlpha(1f);
+            holder.starIcon.setOnClickListener(v -> {
+                boolean newState = !email.starred;
+                email.starred = newState;
+                int p = holder.getAdapterPosition();
+                if (p != RecyclerView.NO_POSITION) notifyItemChanged(p);
 
-            Context ctx = v.getContext().getApplicationContext();
-            SharedPreferences prefs = ctx.getSharedPreferences("prefs", Context.MODE_PRIVATE);
-            String token = prefs.getString("jwt", null);
+                Context app = v.getContext().getApplicationContext();
+                SharedPreferences prefs = app.getSharedPreferences("prefs", Context.MODE_PRIVATE);
+                String token = prefs.getString("jwt", null);
 
-            String labelId = "starred";
-            LocalLabelActions.applyStarLocally(ctx, email.id, newState, labelId);
+                String labelId = "starred";
+                LocalLabelActions.applyStarLocally(app, email.id, newState, labelId);
 
-            if (token != null) {
-                patchLabel(token, email.id, labelId, !newState);
-            }
-        });
+                if (token != null) {
+                    patchLabel(token, email.id, labelId, !newState);
+                }
+            });
+        }
 
         holder.itemView.setOnClickListener(v -> {
+            if (viewingDrafts) {
+                // Open Compose to continue editing this draft
+                Intent i = new Intent(v.getContext(), ComposeActivity.class);
+                i.putExtra("EXTRA_MODE", "edit_draft");
+                i.putExtra("EXTRA_DRAFT_ID", email.id);
+                v.getContext().startActivity(i);
+                return;
+            }
+
+            // Normal flow: open the mail viewer
             if (!email.read) {
                 email.read = true;
                 int p = holder.getAdapterPosition();
@@ -174,9 +197,10 @@ public class EmailAdapter extends RecyclerView.Adapter<EmailAdapter.EmailViewHol
         }
     }
 
+    /** Local-only helpers for toggling the "starred" label and flag. */
     static final class LocalLabelActions {
-        static com.example.gmailish.data.db.AppDatabase getDb(Context ctx) {
-            return com.example.gmailish.ui.inbox.CreateLabelActivity.DbHolder.getInstance(ctx);
+        static AppDatabase getDb(Context ctx) {
+            return AppDbProvider.get(ctx.getApplicationContext());
         }
 
         static void applyStarLocally(Context ctx, String mailId, boolean starred, String labelIdRaw) {
@@ -210,20 +234,20 @@ public class EmailAdapter extends RecyclerView.Adapter<EmailAdapter.EmailViewHol
         static String normalizeLabelId(String id) {
             if (id == null) return null;
             if ("inbox".equalsIgnoreCase(id)) return "primary";
-            return id.toLowerCase();
+            return id.toLowerCase(Locale.ROOT);
         }
     }
-
 
     /* =========================
        Timestamp formatting
        ========================= */
 
-    private String formatListTimestamp (String raw) {
+
+    private String formatListTimestamp(String raw) {
+
         if (raw == null || raw.isEmpty()) return "";
         try {
             if (Build.VERSION.SDK_INT >= 26) {
-                // ISO-8601 → ZonedDateTime in local zone
                 OffsetDateTime odt = OffsetDateTime.parse(raw);
                 ZonedDateTime zdt = odt.atZoneSameInstant(ZoneId.systemDefault());
 
@@ -231,7 +255,6 @@ public class EmailAdapter extends RecyclerView.Adapter<EmailAdapter.EmailViewHol
                 DateTimeFormatter fmt = DateTimeFormatter.ofPattern(isToday ? "HH:mm" : "MMM d", Locale.getDefault());
                 return zdt.format(fmt);
             } else {
-                // Fallback parser tolerant to: Z or ±hh:mm, with/without millis
                 Date date = parseLegacyIso(raw);
                 if (date == null) return raw;
 
@@ -246,7 +269,7 @@ public class EmailAdapter extends RecyclerView.Adapter<EmailAdapter.EmailViewHol
                 return new SimpleDateFormat(isToday ? "HH:mm" : "MMM d", Locale.getDefault()).format(date);
             }
         } catch (Throwable t) {
-            return raw; // if anything fails, show raw string
+            return raw;
         }
     }
 
@@ -274,4 +297,3 @@ public class EmailAdapter extends RecyclerView.Adapter<EmailAdapter.EmailViewHol
         }
     }
 }
-

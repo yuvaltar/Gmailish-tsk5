@@ -9,7 +9,31 @@ public class Email {
     public boolean starred;
     public String id;
 
-    public Email(String senderName, String subject, String content, String timestamp, boolean read, boolean starred, String id) {
+    // NEW: who it’s addressed to (for drafts/opening editor)
+    public String to;
+
+    // NEW: is this mail a draft? (derived from labels array)
+    public boolean isDraft;
+
+    public Email(String senderName,
+                 String subject,
+                 String content,
+                 String timestamp,
+                 boolean read,
+                 boolean starred,
+                 String id) {
+        this(senderName, subject, content, timestamp, read, starred, id, null, false);
+    }
+
+    public Email(String senderName,
+                 String subject,
+                 String content,
+                 String timestamp,
+                 boolean read,
+                 boolean starred,
+                 String id,
+                 String to,
+                 boolean isDraft) {
         this.senderName = senderName;
         this.subject = subject;
         this.content = content;
@@ -17,5 +41,7 @@ public class Email {
         this.read = read;
         this.starred = starred;
         this.id = id;
+        this.to = to;
+        this.isDraft = isDraft;
     }
 }

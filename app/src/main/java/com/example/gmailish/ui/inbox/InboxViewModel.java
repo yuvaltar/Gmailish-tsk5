@@ -11,9 +11,9 @@ import androidx.annotation.NonNull;
 import androidx.lifecycle.AndroidViewModel;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
-import androidx.room.Room;
 
 import com.example.gmailish.data.db.AppDatabase;
+import com.example.gmailish.data.db.AppDbProvider;
 import com.example.gmailish.data.entity.MailEntity;
 import com.example.gmailish.data.repository.MailRepository;
 import com.example.gmailish.model.Email;
@@ -25,8 +25,11 @@ import org.json.JSONObject;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Executors;
 
 import okhttp3.Call;
@@ -37,53 +40,63 @@ import okhttp3.Response;
 
 public class InboxViewModel extends AndroidViewModel {
 
-
     private static final String TAG = "InboxVM";
 
+    // Special keys
+    private static final String KEY_ALL_INBOXES = "__ALL__";
+    private static final String LABEL_INBOX     = "inbox";
+    private static final String LABEL_PRIMARY   = "primary";
+    private static final String LABEL_DRAFTS    = "drafts";
+    private static final String LABEL_SENT      = "sent";
+    private static final String LABEL_OUTBOX    = "outbox";
+
+    // Buckets excluded from “All inboxes”
+    private static final Set<String> EXCLUDED_LABELS = new HashSet<>(java.util.Arrays.asList(
+            LABEL_SENT, LABEL_DRAFTS, LABEL_OUTBOX
+    ));
+
     private final MutableLiveData<List<Email>> emailsLiveData = new MutableLiveData<>();
-    private final MutableLiveData<String> errorLiveData = new MutableLiveData<>();
-    private final MutableLiveData<User> currentUserLiveData = new MutableLiveData<>();
+    private final MutableLiveData<String> errorLiveData       = new MutableLiveData<>();
+    private final MutableLiveData<User> currentUserLiveData   = new MutableLiveData<>();
+    private final MutableLiveData<Map<String, Integer>> unreadCountsLiveData = new MutableLiveData<>();
 
     private final OkHttpClient client = new OkHttpClient();
-
-    private static final String KEY_ALL_INBOXES = "__ALL__";
-
-
-    private static final java.util.Set<String> EXCLUDED_LABELS =
-            new java.util.HashSet<>(java.util.Arrays.asList(
-                    "sent", "drafts"
-            ));
-    private final MutableLiveData<java.util.Map<String, Integer>> unreadCountsLiveData = new MutableLiveData<>();
-    public LiveData<java.util.Map<String, Integer>> getUnreadCounts() { return unreadCountsLiveData; }
-
-
     private final MailRepository mailRepo;
 
     public InboxViewModel(@NonNull Application application) {
         super(application);
         Log.d(TAG, "InboxViewModel: init");
-        AppDatabase db = Room.databaseBuilder(
-                application.getApplicationContext(),
-                AppDatabase.class,
-                "gmailish.db"
-        ).fallbackToDestructiveMigration().build();
+        AppDatabase db = AppDbProvider.get(application.getApplicationContext());
         mailRepo = new MailRepository(db.mailDao(), db.labelDao(), db.mailLabelDao());
     }
 
     public LiveData<List<Email>> getEmails() { return emailsLiveData; }
     public LiveData<String> getError() { return errorLiveData; }
     public LiveData<User> getCurrentUserLiveData() { return currentUserLiveData; }
+    public LiveData<Map<String, Integer>> getUnreadCounts() { return unreadCountsLiveData; }
+
+    /* =========================
+       Helpers
+       ========================= */
 
     private boolean hasStarredLabel(JSONObject obj) {
         JSONArray labels = obj.optJSONArray("labels");
-        if (labels != null) {
-            for (int j = 0; j < labels.length(); j++) {
-                if ("starred".equalsIgnoreCase(labels.optString(j))) return true;
-            }
+        if (labels == null) return false;
+        for (int j = 0; j < labels.length(); j++) {
+            if ("starred".equalsIgnoreCase(labels.optString(j))) return true;
         }
         return false;
     }
 
+    private boolean hasDraftLabel(JSONObject obj) {
+        JSONArray labels = obj.optJSONArray("labels");
+        if (labels != null) {
+            for (int j = 0; j < labels.length(); j++) {
+                if ("drafts".equalsIgnoreCase(labels.optString(j))) return true;
+            }
+        }
+        return false;
+    }
 
     private List<String> parseLabelsArray(JSONObject obj) {
         List<String> out = new ArrayList<>();
@@ -97,10 +110,17 @@ public class InboxViewModel extends AndroidViewModel {
         return out;
     }
 
+    /** Local normalization: server "inbox" becomes local "primary" everywhere. */
     private String normalizeLabel(String label) {
         if (label == null) return null;
-        if ("inbox".equalsIgnoreCase(label)) return "primary";
-        return label.toLowerCase();
+        if (LABEL_INBOX.equalsIgnoreCase(label)) return LABEL_PRIMARY;
+        return label.toLowerCase(Locale.ROOT);
+    }
+
+    /** API mapping: when calling the server, convert local "primary" back to "inbox". */
+    private String apiLabel(String label) {
+        if (label == null) return null;
+        return LABEL_PRIMARY.equalsIgnoreCase(label) ? LABEL_INBOX : label.toLowerCase(Locale.ROOT);
     }
 
     private String getJwtToken() {
@@ -110,12 +130,22 @@ public class InboxViewModel extends AndroidViewModel {
         return jwt;
     }
 
+    private String resolveMe(String value, String currentUserId) {
+        if (value == null || value.isEmpty()) return value;
+        if ("me".equalsIgnoreCase(value) && currentUserId != null && !currentUserId.isEmpty()) {
+            return currentUserId;
+        }
+        return value;
+    }
+
     private List<Email> parseEmailList(JSONArray jsonArray) {
         try {
             List<Email> parsedEmails = new ArrayList<>();
             for (int i = 0; i < jsonArray.length(); i++) {
                 JSONObject obj = jsonArray.getJSONObject(i);
                 boolean isStarred = hasStarredLabel(obj);
+                boolean isDraft = hasDraftLabel(obj);
+
                 parsedEmails.add(new Email(
                         obj.optString("senderName"),
                         obj.optString("subject"),
@@ -123,7 +153,9 @@ public class InboxViewModel extends AndroidViewModel {
                         obj.optString("timestamp"),
                         obj.optBoolean("read"),
                         isStarred,
-                        obj.optString("id")
+                        obj.optString("id"),
+                        obj.optString("recipientEmail", null),
+                        isDraft
                 ));
             }
             return parsedEmails;
@@ -132,14 +164,6 @@ public class InboxViewModel extends AndroidViewModel {
             errorLiveData.postValue("JSON parse error: " + e.getMessage());
             return null;
         }
-    }
-
-    private String resolveMe(String value, String currentUserId) {
-        if (value == null || value.isEmpty()) return value;
-        if ("me".equalsIgnoreCase(value) && currentUserId != null && !currentUserId.isEmpty()) {
-            return currentUserId;
-        }
-        return value;
     }
 
     private void syncToLocal(JSONArray jsonArray) {
@@ -152,26 +176,25 @@ public class InboxViewModel extends AndroidViewModel {
                 SharedPreferences prefs = getApplication().getSharedPreferences("prefs", Context.MODE_PRIVATE);
                 String currentUserId = prefs.getString("user_id", null);
 
-
                 List<MailEntity> mails = new ArrayList<>();
                 Map<String, List<String>> mailToLabels = new HashMap<>();
 
                 for (int i = 0; i < jsonArray.length(); i++) {
                     JSONObject obj = jsonArray.getJSONObject(i);
 
-                    String id = obj.optString("id");
-                    String senderName = obj.optString("senderName");
-                    String subject = obj.optString("subject");
-                    String content = obj.optString("content");
-                    boolean read = obj.optBoolean("read");
-                    boolean starred = hasStarredLabel(obj);
+                    String id          = obj.optString("id");
+                    String senderName  = obj.optString("senderName");
+                    String subject     = obj.optString("subject");
+                    String content     = obj.optString("content");
+                    boolean read       = obj.optBoolean("read");
+                    boolean starred    = hasStarredLabel(obj);
 
                     // Resolve identity fields including "me"
-                    String senderId = resolveMe(obj.optString("senderId", null), currentUserId);
+                    String senderId    = resolveMe(obj.optString("senderId", null), currentUserId);
                     String recipientId = resolveMe(obj.optString("recipientId", null), currentUserId);
-                    String ownerId = resolveMe(obj.optString("ownerId", null), currentUserId);
+                    String ownerId     = resolveMe(obj.optString("ownerId", null), currentUserId);
 
-                    String recipientName = obj.optString("recipientName", null);
+                    String recipientName  = obj.optString("recipientName", null);
                     String recipientEmail = obj.optString("recipientEmail", null);
 
                     MailEntity me = new MailEntity(
@@ -183,7 +206,7 @@ public class InboxViewModel extends AndroidViewModel {
                             recipientEmail,
                             subject,
                             content,
-                            null, // keep null or parse if you prefer
+                            null, // optionally parse timestamp here
                             ownerId,
                             read,
                             starred
@@ -192,7 +215,7 @@ public class InboxViewModel extends AndroidViewModel {
 
                     List<String> labels = new ArrayList<>();
                     for (String raw : parseLabelsArray(obj)) {
-                        labels.add(normalizeLabel(raw));
+                        labels.add(normalizeLabel(raw)); // server -> local
                     }
                     mailToLabels.put(id, labels);
                 }
@@ -204,6 +227,30 @@ public class InboxViewModel extends AndroidViewModel {
             }
         });
     }
+
+    private List<Email> mapEntitiesToEmails(List<MailEntity> mails) {
+        List<Email> mapped = new ArrayList<>();
+        if (mails == null) return mapped;
+        for (MailEntity m : mails) {
+            mapped.add(new Email(
+                    m.getSenderName(),
+                    m.getSubject(),
+                    m.getContent(),
+                    m.getTimestamp() != null ? m.getTimestamp().toString() : "",
+                    m.getRead(),
+                    m.getStarred(),
+                    m.getId(),
+                    m.getRecipientEmail(),
+                    m.isDraft()
+            ));
+        }
+        return mapped;
+    }
+
+    /* =========================
+       Unread counts
+       ========================= */
+
     public void refreshUnreadCounts() {
         String token = getJwtToken();
         if (token == null) {
@@ -211,7 +258,7 @@ public class InboxViewModel extends AndroidViewModel {
             return;
         }
         Request request = new Request.Builder()
-                .url("http://10.0.2.2:3000/api/mails") // get all and aggregate
+                .url("http://10.0.2.2:3000/api/mails")
                 .header("Authorization", "Bearer " + token)
                 .build();
 
@@ -229,8 +276,7 @@ public class InboxViewModel extends AndroidViewModel {
                     String body = r.body() != null ? r.body().string() : "[]";
                     JSONArray arr = new JSONArray(body);
 
-                    // label -> unread count
-                    java.util.Map<String, Integer> counts = new java.util.HashMap<>();
+                    Map<String, Integer> counts = new HashMap<>();
                     int allInboxesUnread = 0;
 
                     for (int i = 0; i < arr.length(); i++) {
@@ -239,29 +285,26 @@ public class InboxViewModel extends AndroidViewModel {
                         if (read) continue;
 
                         JSONArray labels = obj.optJSONArray("labels");
-                        // If a mail has no labels, treat as inbox/primary if that matches your backend semantics
+
                         if (labels == null || labels.length() == 0) {
-                            // count toward inbox + all
-                            counts.put("inbox", counts.getOrDefault("inbox", 0) + 1);
-                            // for All inboxes, exclude system buckets
+                            // FIX: count “no labels” as PRIMARY (local name), not "inbox"
+                            String key = LABEL_PRIMARY;
+                            counts.put(key, counts.getOrDefault(key, 0) + 1);
                             allInboxesUnread += 1;
                             continue;
                         }
 
                         boolean excluded = false;
-                        java.util.Set<String> perMailLabels = new java.util.HashSet<>();
+                        Set<String> perMailLabels = new HashSet<>();
                         for (int j = 0; j < labels.length(); j++) {
-                            String lb = labels.optString(j, "").toLowerCase();
+                            String lb = normalizeLabel(labels.optString(j, ""));
                             perMailLabels.add(lb);
                             if (EXCLUDED_LABELS.contains(lb)) excluded = true;
                         }
 
-                        // Increment each label’s count (one mail can belong to multiple labels)
                         for (String lb : perMailLabels) {
                             counts.put(lb, counts.getOrDefault(lb, 0) + 1);
                         }
-
-                        // Add to “All inboxes” iff not in excluded bucket
                         if (!excluded) {
                             allInboxesUnread += 1;
                         }
@@ -276,7 +319,9 @@ public class InboxViewModel extends AndroidViewModel {
         });
     }
 
-    // ---- API calls ----
+    /* =========================
+       API calls
+       ========================= */
 
     public void loadCurrentUser(String token) {
         Log.d(TAG, "loadCurrentUser called. hasToken=" + (token != null));
@@ -286,13 +331,11 @@ public class InboxViewModel extends AndroidViewModel {
                 .build();
 
         client.newCall(request).enqueue(new Callback() {
-            @Override
-            public void onFailure(Call call, IOException e) {
+            @Override public void onFailure(Call call, IOException e) {
                 Log.e(TAG, "CurrentUser network failure: " + e.getMessage());
             }
 
-            @Override
-            public void onResponse(Call call, Response response) throws IOException {
+            @Override public void onResponse(Call call, Response response) throws IOException {
                 try (Response r = response) {
                     if (!r.isSuccessful()) {
                         Log.e(TAG, "CurrentUser response error: code=" + r.code());
@@ -302,10 +345,10 @@ public class InboxViewModel extends AndroidViewModel {
                     Log.d(TAG, "CurrentUser raw: " + body);
                     try {
                         JSONObject json = new JSONObject(body);
-                        String id = json.optString("id", null);
-                        String username = json.optString("username", null);
-                        String picture = json.optString("picture", "");
-                        String pictureUrl = json.optString("pictureUrl", null);
+                        String id        = json.optString("id", null);
+                        String username  = json.optString("username", null);
+                        String picture   = json.optString("picture", "");
+                        String pictureUrl= json.optString("pictureUrl", null);
 
                         SharedPreferences prefs = getApplication().getSharedPreferences("prefs", Context.MODE_PRIVATE);
                         prefs.edit().putString("user_id", id).putString("username", username).apply();
@@ -327,14 +370,12 @@ public class InboxViewModel extends AndroidViewModel {
                 .build();
 
         client.newCall(request).enqueue(new Callback() {
-            @Override
-            public void onFailure(Call call, IOException e) {
+            @Override public void onFailure(Call call, IOException e) {
                 Log.e(TAG, "loadEmails network error: " + e.getMessage());
                 errorLiveData.postValue("Network error: " + e.getMessage());
             }
 
-            @Override
-            public void onResponse(Call call, Response response) throws IOException {
+            @Override public void onResponse(Call call, Response response) throws IOException {
                 try (Response r = response) {
                     if (!r.isSuccessful()) {
                         errorLiveData.postValue("Error code: " + r.code());
@@ -367,14 +408,12 @@ public class InboxViewModel extends AndroidViewModel {
 
         client.newCall(request).enqueue(new Callback() {
 
-            @Override
-            public void onFailure(Call call, IOException e) {
+            @Override public void onFailure(Call call, IOException e) {
                 Log.e(TAG, "Search network error: " + e.getMessage());
                 errorLiveData.postValue("Search error: " + e.getMessage());
             }
 
-            @Override
-            public void onResponse(Call call, Response response) throws IOException {
+            @Override public void onResponse(Call call, Response response) throws IOException {
                 try (Response r = response) {
                     if (!r.isSuccessful()) {
                         errorLiveData.postValue("Search failed: " + r.code());
@@ -384,7 +423,6 @@ public class InboxViewModel extends AndroidViewModel {
                     JSONArray array = new JSONArray(jsonStr);
                     List<Email> parsedEmails = parseEmailList(array);
                     if (parsedEmails != null) emailsLiveData.postValue(parsedEmails);
-                    // optional: syncToLocal(array);
                 } catch (Exception e) {
                     errorLiveData.postValue("JSON parse error: " + e.getMessage());
                 }
@@ -395,27 +433,35 @@ public class InboxViewModel extends AndroidViewModel {
     public void loadEmailsByLabel(String label) {
         errorLiveData.setValue(null);
         String token = getJwtToken();
-        String normalized = normalizeLabel(label);
-        Log.d(TAG, "loadEmailsByLabel (remote): raw=" + label + " normalized=" + normalized);
+        String normalized = normalizeLabel(label); // local name (primary, starred, etc.)
+
+        // Drafts are local-only
+        if (LABEL_DRAFTS.equalsIgnoreCase(normalized)) {
+            loadEmailsByLabelLocal(LABEL_DRAFTS);
+            return;
+        }
+
+        Log.d(TAG, "loadEmailsByLabel (remote): raw=" + label + " normalized(local)=" + normalized);
 
         if (token == null) {
             errorLiveData.postValue("JWT token missing");
             return;
         }
 
-        String url = "http://10.0.2.2:3000/api/mails?label=" + normalized;
+        // FIX: When calling the server, convert local "primary" back to "inbox"
+        String serverLabel = apiLabel(normalized);
+        String url = "http://10.0.2.2:3000/api/mails?label=" + serverLabel;
+
         Request request = new Request.Builder().url(url).header("Authorization", "Bearer " + token).build();
 
         client.newCall(request).enqueue(new Callback() {
 
-            @Override
-            public void onFailure(Call call, IOException e) {
+            @Override public void onFailure(Call call, IOException e) {
                 Log.e(TAG, "Label '" + label + "' network error: " + e.getMessage());
                 errorLiveData.postValue("Failed to load '" + label + "': " + e.getMessage());
             }
 
-            @Override
-            public void onResponse(Call call, Response response) throws IOException {
+            @Override public void onResponse(Call call, Response response) throws IOException {
                 try (Response r = response) {
                     if (!r.isSuccessful()) {
                         errorLiveData.postValue("Server error " + r.code() + " loading '" + normalized + "'");
@@ -436,8 +482,7 @@ public class InboxViewModel extends AndroidViewModel {
     public void loadEmailsByLabelLocal(String labelIdRaw) {
         errorLiveData.setValue(null);
         String labelId = normalizeLabel(labelIdRaw);
-        Log.d(TAG, "loadEmailsByLabelLocal: raw=" + labelIdRaw + " normalized=" + labelId);
-
+        Log.d(TAG, "loadEmailsByLabelLocal: raw=" + labelIdRaw + " normalized(local)=" + labelId);
 
         Executors.newSingleThreadExecutor().execute(() -> {
             try {
@@ -445,18 +490,8 @@ public class InboxViewModel extends AndroidViewModel {
                 String ownerId = prefs.getString("user_id", null);
 
                 List<MailEntity> mails = mailRepo.getMailsForLabelLocal(labelId, ownerId);
-                List<Email> mapped = new ArrayList<>();
-                for (MailEntity m : mails) {
-                    mapped.add(new Email(
-                            m.getSenderName(),
-                            m.getSubject(),
-                            m.getContent(),
-                            m.getTimestamp() != null ? m.getTimestamp().toString() : "",
-                            m.getRead(),
-                            m.getStarred(),
-                            m.getId()
-                    ));
-                }
+                List<Email> mapped = mapEntitiesToEmails(mails);
+
                 Log.d(TAG, "loadEmailsByLabelLocal: mapped=" + mapped.size());
                 emailsLiveData.postValue(mapped);
             } catch (Exception e) {
@@ -465,7 +500,6 @@ public class InboxViewModel extends AndroidViewModel {
             }
         });
     }
-
 
     public boolean isOnline() {
         ConnectivityManager cm = (ConnectivityManager) getApplication().getSystemService(Context.CONNECTIVITY_SERVICE);
@@ -477,7 +511,7 @@ public class InboxViewModel extends AndroidViewModel {
         Log.d(TAG, "isOnline -> " + online);
         return online;
     }
-  
+
     public void loadAllInboxes() {
         errorLiveData.setValue(null);
         String token = getJwtToken();
@@ -494,14 +528,12 @@ public class InboxViewModel extends AndroidViewModel {
                 .build();
 
         client.newCall(request).enqueue(new Callback() {
-            @Override
-            public void onFailure(Call call, IOException e) {
+            @Override public void onFailure(Call call, IOException e) {
                 Log.e(TAG, "loadAllInboxes network error: " + e.getMessage());
                 errorLiveData.postValue("Network error: " + e.getMessage());
             }
 
-            @Override
-            public void onResponse(Call call, Response response) throws IOException {
+            @Override public void onResponse(Call call, Response response) throws IOException {
                 try (Response r = response) {
                     if (!r.isSuccessful()) {
                         Log.e(TAG, "loadAllInboxes error: code=" + r.code());
@@ -513,63 +545,68 @@ public class InboxViewModel extends AndroidViewModel {
                     Log.d(TAG, "AllInboxes raw: " + body);
 
                     List<Email> parsedEmails = new ArrayList<>();
-                    try {
-                        JSONArray arr = new JSONArray(body);
-                        for (int i = 0; i < arr.length(); i++) {
-                            JSONObject obj = arr.getJSONObject(i);
+                    JSONArray arr = new JSONArray(body);
 
-                            // Check labels and exclude system buckets
-                            boolean exclude = false;
-                            JSONArray labels = obj.optJSONArray("labels");
-                            if (labels != null) {
-                                for (int j = 0; j < labels.length(); j++) {
-                                    String lb = labels.optString(j, "").toLowerCase();
-                                    if (EXCLUDED_LABELS.contains(lb)) {
-                                        exclude = true;
-                                        break;
-                                    }
+                    for (int i = 0; i < arr.length(); i++) {
+                        JSONObject obj = arr.getJSONObject(i);
+
+                        // Exclude system buckets from “All inboxes”
+                        boolean exclude = false;
+                        JSONArray labels = obj.optJSONArray("labels");
+                        if (labels != null) {
+                            for (int j = 0; j < labels.length(); j++) {
+                                String lb = normalizeLabel(labels.optString(j, ""));
+                                if (EXCLUDED_LABELS.contains(lb)) {
+                                    exclude = true;
+                                    break;
                                 }
                             }
-                            if (exclude) continue;
-
-                            boolean isStarred = hasStarredLabel(obj);
-
-                            parsedEmails.add(new Email(
-                                    obj.optString("senderName"),
-                                    obj.optString("subject"),
-                                    obj.optString("content"),
-                                    obj.optString("timestamp"),
-                                    obj.optBoolean("read"),
-                                    isStarred,
-                                    obj.optString("id")
-                            ));
                         }
+                        if (exclude) continue;
 
-                        // Sort newest first. If your timestamp is millis, parse to long; if ISO-8601 strings, string compare often works.
-                        parsedEmails.sort((a, b) -> {
-                            String ta = a.timestamp, tb = b.timestamp;
-                            if (ta == null) ta = "";
-                            if (tb == null) tb = "";
-                            // try numeric (millis) first
-                            try {
-                                long la = Long.parseLong(ta);
-                                long lb = Long.parseLong(tb);
-                                return Long.compare(lb, la);
-                            } catch (NumberFormatException ignore) {
-                                return tb.compareTo(ta);
-                            }
-                        });
+                        boolean isStarred = hasStarredLabel(obj);
 
-                        Log.d(TAG, "AllInboxes parsed count=" + parsedEmails.size());
-                        emailsLiveData.postValue(parsedEmails);
-
-                    } catch (Exception e) {
-                        Log.e(TAG, "AllInboxes JSON parse error: " + e.getMessage());
-                        errorLiveData.postValue("JSON parse error: " + e.getMessage());
+                        parsedEmails.add(new Email(
+                                obj.optString("senderName"),
+                                obj.optString("subject"),
+                                obj.optString("content"),
+                                obj.optString("timestamp"),
+                                obj.optBoolean("read"),
+                                isStarred,
+                                obj.optString("id")
+                        ));
                     }
+
+                    // Sort newest-first.
+                    parsedEmails.sort((a, b) -> {
+                        String ta = a.timestamp, tb = b.timestamp;
+                        if (ta == null) ta = "";
+                        if (tb == null) tb = "";
+                        try {
+                            long la = Long.parseLong(ta);
+                            long lb = Long.parseLong(tb);
+                            return Long.compare(lb, la);
+                        } catch (NumberFormatException ignore) {
+                            // Fallback to lexical compare (works for ISO-8601)
+                            return tb.compareTo(ta);
+                        }
+                    });
+
+                    Log.d(TAG, "AllInboxes parsed count=" + parsedEmails.size());
+                    emailsLiveData.postValue(parsedEmails);
+
+                    // Keep local cache in sync for offline
+                    try {
+                        syncToLocal(arr);
+                    } catch (Throwable t) {
+                        Log.w(TAG, "syncToLocal failed (non-fatal): " + t.getMessage());
+                    }
+
+                } catch (Exception e) {
+                    Log.e(TAG, "AllInboxes JSON parse error: " + e.getMessage());
+                    errorLiveData.postValue("JSON parse error: " + e.getMessage());
                 }
             }
         });
     }
 }
-

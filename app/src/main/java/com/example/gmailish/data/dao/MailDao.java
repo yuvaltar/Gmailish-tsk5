@@ -4,7 +4,6 @@ import androidx.room.Dao;
 import androidx.room.Insert;
 import androidx.room.OnConflictStrategy;
 import androidx.room.Query;
-import androidx.room.Transaction;
 
 import com.example.gmailish.data.entity.MailEntity;
 
@@ -26,6 +25,10 @@ public interface MailDao {
 
     @Query("UPDATE mails SET starred = :starred WHERE id = :mailId")
     int setStarred(String mailId, boolean starred);
+
+    // (Optional) quick edit helpers for drafts — not required but convenient
+    @Query("UPDATE mails SET subject = :subject, content = :content WHERE id = :mailId")
+    int updateSubjectAndContent(String mailId, String subject, String content);
 
     // Delete by id (blocking)
     @Query("DELETE FROM mails WHERE id = :mailId")
@@ -49,7 +52,11 @@ public interface MailDao {
     @Query("SELECT * FROM mails WHERE ownerId = :ownerId AND starred = 1 ORDER BY timestamp DESC")
     List<MailEntity> getStarredByOwnerSync(String ownerId);
 
-    // NEW: get single mail by id
+    // Get single mail by id
     @Query("SELECT * FROM mails WHERE id = :mailId LIMIT 1")
     MailEntity getByIdSync(String mailId);
+
+    // (Optional) bulk fetch by ids — useful sometimes for batch UI work
+    @Query("SELECT * FROM mails WHERE id IN (:ids)")
+    List<MailEntity> getByIdsSync(List<String> ids);
 }

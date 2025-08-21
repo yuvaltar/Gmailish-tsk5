@@ -19,10 +19,15 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.TimeZone;
+import java.util.UUID;
 
 public class MailRepository {
 
     private static final String TAG = "MailRepo";
+
+    private static final String LABEL_DRAFTS = "drafts";
+    private static final String LABEL_SENT   = "sent";
+    private static final String LABEL_OUTBOX = "outbox";
 
     private final MailDao mailDao;
     private final LabelDao labelDao;
@@ -291,5 +296,96 @@ public class MailRepository {
         if (labelId == null || labelId.isEmpty() || ownerId == null || ownerId.isEmpty())
             return new java.util.ArrayList<>();
         return mailLabelDao.getMailsForLabelSync(labelId, ownerId);
+    }
+
+    // =========================
+    // DRAFTS – NEW HELPERS
+    // =========================
+
+    /**
+     * Create or update a draft locally. Returns the draft id (generates one if null/empty).
+     * Use this when the user types anything in Compose and leaves.
+     */
+    public String upsertDraftLocal(String draftIdOrNull, String ownerId,
+                                   String to, String subject, String content, Date ts) {
+        String id = (draftIdOrNull == null || draftIdOrNull.isEmpty())
+                ? "draft-" + UUID.randomUUID()
+                : draftIdOrNull;
+
+        MailEntity existing = mailDao.getByIdSync(id);
+
+        String senderId     = (existing != null) ? existing.getSenderId()      : ownerId;
+        String senderName   = (existing != null) ? existing.getSenderName()    : "Me";
+        String recipientId  = (existing != null) ? existing.getRecipientId()   : (to != null ? to : "");
+        String recipientNm  = (existing != null) ? existing.getRecipientName() : (to != null ? to : "");
+        String recipientEm  = (existing != null) ? existing.getRecipientEmail(): to;
+
+        String subj = (subject != null) ? subject : ((existing != null) ? existing.getSubject() : null);
+        String body = (content != null) ? content : ((existing != null) ? existing.getContent() : null);
+        Date   when = (ts != null) ? ts : ((existing != null) ? existing.getTimestamp() : new Date());
+
+        // NOTE isDraft = true
+        MailEntity draft = new MailEntity(
+                id,
+                senderId,
+                senderName,
+                (to != null) ? to : recipientId,
+                (to != null) ? to : recipientNm,
+                (to != null) ? to : recipientEm,
+                subj,
+                body,
+                when,
+                ownerId,
+                true,
+                (existing != null) && existing.getStarred(),
+                true // <- mark as draft
+        );
+
+        mailDao.upsert(draft);
+        ensureLabelAndLink(id, ownerId, LABEL_DRAFTS);
+        Log.d(TAG, "upsertDraftLocal: id=" + id);
+        return id;
+    }
+
+
+    /** Delete a draft and its label cross-refs. */
+    public void deleteDraftLocal(String draftId) {
+        if (draftId == null || draftId.isEmpty()) return;
+        try { mailLabelDao.clearForMail(draftId); } catch (Exception ignore) {}
+        mailDao.deleteById(draftId);
+        Log.d(TAG, "deleteDraftLocal: id=" + draftId);
+    }
+
+    /**
+     * Convert a draft into a sent item (local).
+     * Removes "drafts" label and ensures "sent" (or "outbox") as requested.
+     * If you want a brand-new id (e.g., server id), pass newId; otherwise we reuse the draft id.
+     */
+    public String convertDraftLocal(String draftId, String ownerId,
+                                    String newIdOrNull,
+                                    String to, String subject, String content,
+                                    Date ts, boolean markAsSent) {
+        if (draftId == null || draftId.isEmpty()) return null;
+
+        String targetId = (newIdOrNull == null || newIdOrNull.isEmpty()) ? draftId : newIdOrNull;
+
+        // Remove old draft row if id changes; otherwise we’ll overwrite the same row.
+        if (!targetId.equals(draftId)) {
+            deleteDraftLocal(draftId);
+        } else {
+            try { removeLabelFromMailLocal(targetId, LABEL_DRAFTS); } catch (Exception ignore) {}
+        }
+
+        if (markAsSent) {
+            saveSentMailLocal(targetId, ownerId, to, subject, content, ts != null ? ts : new Date());
+            ensureLabelAndLink(targetId, ownerId, LABEL_SENT);
+        } else {
+            // sometimes you may want Outbox first, then Sent after server ack
+            saveOutboxMailLocal(targetId, ownerId, to, subject, content, ts != null ? ts : new Date());
+            ensureLabelAndLink(targetId, ownerId, LABEL_OUTBOX);
+        }
+        Log.d(TAG, "convertDraftLocal: draftId=" + draftId + " -> targetId=" + targetId +
+                " label=" + (markAsSent ? LABEL_SENT : LABEL_OUTBOX));
+        return targetId;
     }
 }
