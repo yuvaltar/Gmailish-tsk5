@@ -10,6 +10,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.TextView;
+
 import com.example.gmailish.data.db.AppDbProvider;
 import com.example.gmailish.data.db.AppDatabase;
 
@@ -242,35 +243,57 @@ public class EmailAdapter extends RecyclerView.Adapter<EmailAdapter.EmailViewHol
        Timestamp formatting
        ========================= */
 
-
     private String formatListTimestamp(String raw) {
-
         if (raw == null || raw.isEmpty()) return "";
+
+        // Epoch seconds/millis
+        if (raw.matches("^\\d{10,13}$")) {
+            try {
+                long v = Long.parseLong(raw);
+                if (v < 1_000_000_000_000L) v *= 1000L;
+                return pretty(new Date(v));
+            } catch (Exception ignore) {}
+        }
+
         try {
             if (Build.VERSION.SDK_INT >= 26) {
-                OffsetDateTime odt = OffsetDateTime.parse(raw);
-                ZonedDateTime zdt = odt.atZoneSameInstant(ZoneId.systemDefault());
-
-                boolean isToday = zdt.toLocalDate().isEqual(java.time.LocalDate.now(ZoneId.systemDefault()));
-                DateTimeFormatter fmt = DateTimeFormatter.ofPattern(isToday ? "HH:mm" : "MMM d", Locale.getDefault());
-                return zdt.format(fmt);
+                // Try ISO-8601
+                try {
+                    OffsetDateTime odt = OffsetDateTime.parse(raw);
+                    ZonedDateTime zdt = odt.atZoneSameInstant(ZoneId.systemDefault());
+                    boolean isToday = zdt.toLocalDate().isEqual(java.time.LocalDate.now(ZoneId.systemDefault()));
+                    DateTimeFormatter fmt = DateTimeFormatter.ofPattern(isToday ? "HH:mm" : "MMM d", Locale.getDefault());
+                    return zdt.format(fmt);
+                } catch (Exception ignored) {
+                    // Fallback: Java Date.toString()
+                    try {
+                        SimpleDateFormat s = new SimpleDateFormat("EEE MMM dd HH:mm:ss zzz yyyy", Locale.US);
+                        return pretty(s.parse(raw));
+                    } catch (Exception ignored2) {
+                        return raw;
+                    }
+                }
             } else {
+                // Pre-26: ISO first
                 Date date = parseLegacyIso(raw);
-                if (date == null) return raw;
-
-                java.util.Calendar cal = java.util.Calendar.getInstance();
-                cal.setTime(date);
-
-                java.util.Calendar now = java.util.Calendar.getInstance();
-                boolean isToday =
-                        cal.get(java.util.Calendar.YEAR) == now.get(java.util.Calendar.YEAR) &&
-                                cal.get(java.util.Calendar.DAY_OF_YEAR) == now.get(java.util.Calendar.DAY_OF_YEAR);
-
-                return new SimpleDateFormat(isToday ? "HH:mm" : "MMM d", Locale.getDefault()).format(date);
+                if (date != null) return pretty(date);
+                // Fallback: Java Date.toString()
+                SimpleDateFormat s = new SimpleDateFormat("EEE MMM dd HH:mm:ss zzz yyyy", Locale.US);
+                return pretty(s.parse(raw));
             }
         } catch (Throwable t) {
             return raw;
         }
+    }
+
+    private String pretty(Date date) {
+        if (date == null) return "";
+        java.util.Calendar cal = java.util.Calendar.getInstance();
+        cal.setTime(date);
+        java.util.Calendar now = java.util.Calendar.getInstance();
+        boolean isToday = cal.get(java.util.Calendar.YEAR) == now.get(java.util.Calendar.YEAR)
+                && cal.get(java.util.Calendar.DAY_OF_YEAR) == now.get(java.util.Calendar.DAY_OF_YEAR);
+        return new SimpleDateFormat(isToday ? "HH:mm" : "MMM d", Locale.getDefault()).format(date);
     }
 
     private Date parseLegacyIso(String iso) {
