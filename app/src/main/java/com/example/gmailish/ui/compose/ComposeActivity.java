@@ -12,15 +12,20 @@ import androidx.lifecycle.ViewModelProvider;
 
 import com.example.gmailish.R;
 import com.example.gmailish.data.db.AppDatabase;
+
 import com.example.gmailish.data.db.AppDbProvider;
+
 import com.example.gmailish.data.entity.MailEntity;
 import com.example.gmailish.data.repository.MailRepository;
 
 import org.json.JSONObject;
 
+
+import java.util.Arrays;
 import java.util.Date;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
+
 import java.util.concurrent.Executors;
 
 import dagger.hilt.android.AndroidEntryPoint;
@@ -82,27 +87,100 @@ public class ComposeActivity extends AppCompatActivity {
             }
         });
 
-        viewModel.sendSuccess.observe(this, payload -> {
-            Log.d(TAG, "sendSuccess observed. payload=" + payload);
-            // If this was an existing draft and the user actually sent it,
-            // you may want to remove the draft copy.
-            if (draftId != null) {
-                io.execute(() -> {
-                    try {
-                        mailRepo.deleteMailLocal(draftId);
-                        Log.d(TAG, "Deleted local draft after send: " + draftId);
-                    } catch (Throwable t) {
-                        Log.e(TAG, "delete draft after send failed: " + t.getMessage());
-                    }
-                });
-            }
-            finish();
-        });
+viewModel.sendSuccess.observe(this, payload -> {
+    Log.d(TAG, "sendSuccess observed. payload=" + payload);
 
-        backButton.setOnClickListener(v -> {
-            // Save draft (if needed) then finish
-            maybeSaveDraftAndFinish();
+    // Parse payload (from main)
+    if (payload != null && !payload.isEmpty()) {
+        try {
+            JSONObject json = new JSONObject(payload);
+            String to = json.optString("to");
+            String subject = json.optString("subject");
+            String content = json.optString("content");
+            String serverMailId = json.optString("id", null);
+
+            Log.d(TAG, "Parsed payload -> to=" + to + ", subject=" + subject +
+                    ", len(content)=" + (content != null ? content.length() : 0) +
+                    ", serverId=" + serverMailId);
+
+            // Current user (saved when loading /users/me)
+            SharedPreferences sp = getSharedPreferences("prefs", MODE_PRIVATE);
+            String senderId = sp.getString("user_id", null);
+            String senderName = sp.getString("username", "Me");
+            Log.d(TAG, "Sender from prefs -> id=" + senderId + ", name=" + senderName);
+
+            if (senderId != null) {
+                String baseId = (serverMailId != null && !serverMailId.isEmpty())
+                        ? serverMailId
+                        : UUID.randomUUID().toString();
+                Date now = new Date();
+
+                // Fallback recipient identity: use email
+                String recipientId = to;
+                String recipientName = to;
+
+                MailEntity senderMail = new MailEntity(
+                        baseId + "_s",
+                        senderId,
+                        senderName != null ? senderName : "Me",
+                        recipientId,
+                        recipientName,
+                        to,
+                        subject,
+                        content,
+                        now,
+                        senderId,   // owner is the sender
+                        true,       // read for sender
+                        false
+                );
+
+                MailEntity recipientMail = new MailEntity(
+                        baseId + "_r",
+                        senderId,
+                        senderName != null ? senderName : "Me",
+                        recipientId,
+                        recipientName,
+                        to,
+                        subject,
+                        content,
+                        now,
+                        recipientId, // owner is the recipient
+                        false,       // unread for recipient
+                        false
+                );
+
+                Log.d(TAG, "Prepared entities. senderId=" + senderMail.getId() +
+                        ", recipientId=" + recipientMail.getId());
+
+                // If you actually want to persist locally, do it here (non-blocking):
+                // io.execute(() -> mailRepo.saveSentAndInboxCopies(senderMail, recipientMail));
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Save to Room parse error", e);
+        }
+    }
+
+    // Draft cleanup (from mailDraft2)
+    if (draftId != null) {
+        io.execute(() -> {
+            try {
+                mailRepo.deleteMailLocal(draftId);
+                Log.d(TAG, "Deleted local draft after send: " + draftId);
+            } catch (Throwable t) {
+                Log.e(TAG, "delete draft after send failed: " + t.getMessage());
+            }
         });
+    }
+
+    finish();
+});
+
+// Keep the back-button draft-save behavior (from mailDraft2)
+backButton.setOnClickListener(v -> {
+    // Save draft (if needed) then finish
+    maybeSaveDraftAndFinish();
+});
+
 
         sendButton.setOnClickListener(v -> {
             String to = toField.getText().toString().trim();

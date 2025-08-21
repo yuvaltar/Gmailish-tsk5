@@ -22,6 +22,7 @@ import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.ActionBarDrawerToggle;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.app.AppCompatDelegate;
 import androidx.core.view.GravityCompat;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -71,6 +72,12 @@ public class InboxActivity extends AppCompatActivity {
 
     private static final String STATE_LABEL   = "state_label";
     private static final String STATE_CHECKED = "state_checked";
+    private static final java.util.Set<String> SYSTEM_LABELS =
+            new java.util.HashSet<>(java.util.Arrays.asList(
+                    "all inboxes","inbox","primary","promotions","social","updates",
+                    "starred","important","sent","drafts","all mail","spam","trash",
+                    "outbox","read","unread"
+            ));
 
     private InboxViewModel viewModel;
     private RecyclerView recyclerView;
@@ -94,6 +101,11 @@ public class InboxActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        AppCompatDelegate.setDefaultNightMode(
+                ThemeManager.isDark(this)
+                        ? AppCompatDelegate.MODE_NIGHT_YES
+                        : AppCompatDelegate.MODE_NIGHT_NO
+        );
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_inbox);
 
@@ -110,6 +122,7 @@ public class InboxActivity extends AppCompatActivity {
             currentLabel  = savedInstanceState.getString(STATE_LABEL, "inbox");
             checkedMenuId = savedInstanceState.getInt(STATE_CHECKED, R.id.nav_primary);
             navigationView.setCheckedItem(checkedMenuId);
+
             if (LABEL_ALL_INBOXES.equals(currentLabel)) {
                 viewModel.loadAllInboxes();
             } else if ("drafts".equalsIgnoreCase(currentLabel)) {
@@ -173,9 +186,17 @@ public class InboxActivity extends AppCompatActivity {
         // Theme toggle
         updateThemeIcon(themeToggleTopBar);
         themeToggleTopBar.setOnClickListener(v -> {
-            persistSelection();
-            String next = ThemeManager.isDark(this) ? "light" : "dark";
-            ThemeManager.setMode(this, next);
+            persistSelectionSync(); // commit last selected label/menu
+
+            boolean toDark = !ThemeManager.isDark(this);
+            ThemeManager.setMode(this, toDark ? "dark" : "light");
+
+            // Apply immediately so resources are re-inflated with the right theme:
+            AppCompatDelegate.setDefaultNightMode(
+                    toDark ? AppCompatDelegate.MODE_NIGHT_YES
+                           : AppCompatDelegate.MODE_NIGHT_NO
+            );
+
             recreate();
         });
 
@@ -302,14 +323,13 @@ public class InboxActivity extends AppCompatActivity {
         swipeRefresh.setOnRefreshListener(() -> {
             SharedPreferences prefs = getSharedPreferences("prefs", MODE_PRIVATE);
             String token = prefs.getString("jwt", null);
-            if (token != null) {
-                if (isOnline()) {
-                    new Thread(() -> pendingSyncManager.flush(token)).start();
-                }
-                // Optional overall mailbox sync
-                viewModel.loadEmails(token);
+
+            // Flush pending ops in background (if online)
+            if (token != null && isOnline()) {
+                new Thread(() -> pendingSyncManager.flush(token)).start();
             }
 
+            // Reload only the current view
             if (LABEL_ALL_INBOXES.equals(currentLabel)) {
                 viewModel.loadAllInboxes();
             } else if ("drafts".equalsIgnoreCase(currentLabel)) {
@@ -320,7 +340,7 @@ public class InboxActivity extends AppCompatActivity {
             viewModel.refreshUnreadCounts();
         });
 
-        // Observe emails
+        // Observe emails: update list and stop spinner
         viewModel.getEmails().observe(this, emails -> {
             adapter.updateData(emails);
             if (swipeRefresh.isRefreshing()) swipeRefresh.setRefreshing(false);
@@ -395,7 +415,12 @@ public class InboxActivity extends AppCompatActivity {
         }
 
         if (token != null) {
-            viewModel.loadEmails(token);
+            // Optional: do a silent cache sync here instead of posting to the UI
+            if (LABEL_ALL_INBOXES.equals(currentLabel)) {
+                viewModel.loadAllInboxes();
+            } else {
+                viewModel.loadEmailsByLabel(currentLabel);
+            }
         }
     }
 
@@ -476,15 +501,21 @@ public class InboxActivity extends AppCompatActivity {
                     runOnUiThread(() -> {
                         Menu menu = navigationView.getMenu();
                         menu.removeGroup(R.id.dynamic_labels_group);
+                        java.util.HashSet<String> seen = new java.util.HashSet<>(SYSTEM_LABELS);
                         for (int i = 0; i < array.length(); i++) {
                             try {
                                 JSONObject labelObj = array.getJSONObject(i);
-                                String label = labelObj.optString("name", "");
-                                if (label.isEmpty()) continue;
-                                MenuItem item = menu.add(R.id.dynamic_labels_group, Menu.NONE, Menu.NONE, label);
+                                String raw = labelObj.optString("name", "");
+                                if (raw.isEmpty()) continue;
+
+                                String lc = raw.toLowerCase();
+                                if (SYSTEM_LABELS.contains(lc)) continue;      // skip core/system labels
+                                if (!seen.add(lc)) continue;                   // skip duplicates
+
+                                MenuItem item = menu.add(R.id.dynamic_labels_group, Menu.NONE, Menu.NONE, raw);
                                 item.setIcon(R.drawable.ic_label);
                                 item.setCheckable(true);
-                                item.setActionView(R.layout.menu_badge);
+                                item.setActionView(R.layout.menu_badge);       // so badges work on customs
                             } catch (Exception e) {
                                 Log.e("Labels", "Error parsing label: " + e.getMessage());
                             }
@@ -512,20 +543,29 @@ public class InboxActivity extends AppCompatActivity {
                 runOnUiThread(() -> {
                     Menu menu = navigationView.getMenu();
                     HashSet<String> existing = new HashSet<>();
+
+                    // 1) Seed with ALL current dynamic titles
                     for (int i = 0; i < menu.size(); i++) {
                         MenuItem item = menu.getItem(i);
                         if (item != null && item.getGroupId() == R.id.dynamic_labels_group && item.getTitle() != null) {
                             existing.add(item.getTitle().toString().toLowerCase());
                         }
                     }
+                    // 2) Seed with system labels so they NEVER get added to dynamic
+                    existing.addAll(SYSTEM_LABELS);
 
+                    // 3) Add only truly custom labels from local DB
                     for (LabelEntity le : localLabels) {
-                        String title = le.name != null ? le.name : "";
+                        String title = le.name != null ? le.name.trim() : "";
                         if (title.isEmpty()) continue;
-                        if (existing.contains(title.toLowerCase())) continue;
+
+                        String lc = title.toLowerCase();
+                        if (existing.contains(lc)) continue; // skip system + duplicates
+
                         MenuItem item = menu.add(R.id.dynamic_labels_group, Menu.NONE, Menu.NONE, title);
                         item.setIcon(R.drawable.ic_label);
                         item.setCheckable(true);
+                        existing.add(lc); // prevent further dupes in same run
                     }
                 });
             } catch (Exception ignored) { }
@@ -564,5 +604,12 @@ public class InboxActivity extends AppCompatActivity {
 
     private void applyCount(MenuItem item, int count) {
         setNumericBadge(item, count, null);
+    }
+
+    private void persistSelectionSync() {
+        SharedPreferences.Editor ed = getSharedPreferences("prefs", MODE_PRIVATE).edit();
+        ed.putString("last_label", currentLabel);
+        ed.putInt("last_menu_id", checkedMenuId);
+        ed.apply(); // sync
     }
 }

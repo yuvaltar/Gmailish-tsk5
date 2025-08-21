@@ -85,6 +85,7 @@ public class MailViewActivity extends AppCompatActivity {
 
         viewModel = new ViewModelProvider(this).get(MailViewModel.class);
 
+
         SharedPreferences prefs = getSharedPreferences("prefs", MODE_PRIVATE);
         jwtToken = prefs.getString("jwt", null);
         mailId   = getIntent().getStringExtra("mailId");
