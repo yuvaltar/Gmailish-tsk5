@@ -136,7 +136,7 @@
             android:orientation="horizontal"
             android:gravity="center"
             android:padding="16dp"
-            android:background="@drawable/bottom_bar_background"
+            android:background="?attr/colorSurface"
             android:elevation="8dp">
 
             <!-- Compose Button (Login Activity Style) -->
