@@ -4,6 +4,21 @@ Gmailish is a modern Android application designed to mimic the functionality of 
 
 Developed as part of a series of assignments, this project showcases advanced Android development techniques, including MVVM architecture, Room persistence, background workers, and REST API integration. It's built to be user-friendly, with a clean interface supporting light/dark modes and intuitive navigation.
 
+## Demo Video 📹
+
+Watch this 5-minute walkthrough to see Gmailish in action: user registration, email composition, labeling, search, theme toggling, and offline-first features like composing/sending while disconnected with auto-sync on reconnect. The demo also shows backend integration with MongoDB (e.g., refreshing to verify new users, labels, and mail relations).
+
+[![Watch the demo](https://img.youtube.com/vi/HxQslOWTtrQ/hqdefault.jpg)](https://www.youtube.com/watch?v=HxQslOWTtrQ)
+
+### Key Highlights from the Video
+- **Registration**: Create a new account with photo, DOB, gender, and strong password validation.
+- **Email Actions**: Send, receive, reply, forward, and view in Sent/Drafts.
+- **Labels**: Create custom labels, star/move messages, and see relations in a cross-reference table.
+- **Search and Themes**: Quick search within labels; toggle light/dark mode.
+- **Offline Demo**: Read emails, compose (saved to pending), label changes—all sync automatically when online.
+- **Backend Visibility**: Live MongoDB and "room" refreshes confirm data persistence.
+
+
 ## Expanded Features 🚀
 Beyond the basics, Gmailish offers a comprehensive set of capabilities tailored for a Gmail-like experience:
 
