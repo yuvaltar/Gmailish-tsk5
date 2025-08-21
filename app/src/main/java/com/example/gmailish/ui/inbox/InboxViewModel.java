@@ -23,7 +23,9 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -74,6 +76,67 @@ public class InboxViewModel extends AndroidViewModel {
     public LiveData<String> getError() { return errorLiveData; }
     public LiveData<User> getCurrentUserLiveData() { return currentUserLiveData; }
     public LiveData<Map<String, Integer>> getUnreadCounts() { return unreadCountsLiveData; }
+
+    /* =========================
+       Timestamp helpers
+       ========================= */
+
+    private String toIso8601(Date date) {
+        if (date == null) return "";
+        if (android.os.Build.VERSION.SDK_INT >= 26) {
+            return date.toInstant()
+                    .atZone(java.time.ZoneId.systemDefault())
+                    .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME);
+        } else {
+            SimpleDateFormat fmt =
+                    new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ", Locale.US);
+            return fmt.format(date);
+        }
+    }
+
+    private Date parseAnyTimestamp(String raw) {
+        if (raw == null || raw.isEmpty()) return null;
+
+        // 1) ISO-8601
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                return Date.from(java.time.OffsetDateTime.parse(raw).toInstant());
+            } else {
+                String n = normalizeIso(raw);
+                SimpleDateFormat s =
+                        new SimpleDateFormat(n.contains(".")
+                                ? "yyyy-MM-dd'T'HH:mm:ss.SSSZ" : "yyyy-MM-dd'T'HH:mm:ssZ", Locale.US);
+                if (n.endsWith("Z")) s.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+                return s.parse(n);
+            }
+        } catch (Exception ignored) {}
+
+        // 2) Epoch seconds/millis
+        try {
+            if (raw.matches("^\\d{10,13}$")) {
+                long v = Long.parseLong(raw);
+                if (v < 1_000_000_000_000L) v *= 1000L;
+                return new Date(v);
+            }
+        } catch (Exception ignored) {}
+
+        // 3) Java Date.toString()
+        try {
+            SimpleDateFormat s = new SimpleDateFormat("EEE MMM dd HH:mm:ss zzz yyyy", Locale.US);
+            return s.parse(raw);
+        } catch (Exception ignored) {}
+
+        return null;
+    }
+
+    private String normalizeIso(String iso) {
+        if (iso == null) return null;
+        int p = Math.max(iso.lastIndexOf('+'), iso.lastIndexOf('-'));
+        if (p > 10 && iso.length() >= p + 6 && iso.charAt(iso.length() - 3) == ':') {
+            return iso.substring(0, iso.length() - 3) + iso.substring(iso.length() - 2);
+        }
+        return iso;
+    }
 
     /* =========================
        Helpers
@@ -197,6 +260,9 @@ public class InboxViewModel extends AndroidViewModel {
                     String recipientName  = obj.optString("recipientName", null);
                     String recipientEmail = obj.optString("recipientEmail", null);
 
+                    // Parse timestamp (supports ISO/epoch/Date.toString)
+                    Date ts = parseAnyTimestamp(obj.optString("timestamp", null));
+
                     MailEntity me = new MailEntity(
                             id,
                             senderId,
@@ -206,7 +272,7 @@ public class InboxViewModel extends AndroidViewModel {
                             recipientEmail,
                             subject,
                             content,
-                            null, // optionally parse timestamp here
+                            ts,   // <-- parsed Date instead of null
                             ownerId,
                             read,
                             starred
@@ -236,7 +302,7 @@ public class InboxViewModel extends AndroidViewModel {
                     m.getSenderName(),
                     m.getSubject(),
                     m.getContent(),
-                    m.getTimestamp() != null ? m.getTimestamp().toString() : "",
+                    toIso8601(m.getTimestamp()),   // <-- emit ISO, not Date.toString()
                     m.getRead(),
                     m.getStarred(),
                     m.getId(),
@@ -287,8 +353,7 @@ public class InboxViewModel extends AndroidViewModel {
                         JSONArray labels = obj.optJSONArray("labels");
 
                         if (labels == null || labels.length() == 0) {
-                            // FIX: count “no labels” as PRIMARY (local name), not "inbox"
-                            String key = LABEL_PRIMARY;
+                            String key = LABEL_PRIMARY; // no labels -> primary
                             counts.put(key, counts.getOrDefault(key, 0) + 1);
                             allInboxesUnread += 1;
                             continue;
@@ -448,7 +513,7 @@ public class InboxViewModel extends AndroidViewModel {
             return;
         }
 
-        // FIX: When calling the server, convert local "primary" back to "inbox"
+        // Convert local "primary" back to server "inbox"
         String serverLabel = apiLabel(normalized);
         String url = "http://10.0.2.2:3000/api/mails?label=" + serverLabel;
 
@@ -577,7 +642,7 @@ public class InboxViewModel extends AndroidViewModel {
                         ));
                     }
 
-                    // Sort newest-first.
+                    // Sort newest-first (ISO strings compare lexicographically)
                     parsedEmails.sort((a, b) -> {
                         String ta = a.timestamp, tb = b.timestamp;
                         if (ta == null) ta = "";
@@ -587,7 +652,6 @@ public class InboxViewModel extends AndroidViewModel {
                             long lb = Long.parseLong(tb);
                             return Long.compare(lb, la);
                         } catch (NumberFormatException ignore) {
-                            // Fallback to lexical compare (works for ISO-8601)
                             return tb.compareTo(ta);
                         }
                     });

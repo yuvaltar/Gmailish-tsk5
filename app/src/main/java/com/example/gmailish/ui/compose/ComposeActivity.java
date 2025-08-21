@@ -104,6 +104,7 @@ viewModel.sendSuccess.observe(this, payload -> {
                     ", serverId=" + serverMailId);
 
             // Current user (saved when loading /users/me)
+
             String senderId = sp.getString("user_id", null);
             String senderName = sp.getString("username", "Me");
             Log.d(TAG, "Sender from prefs -> id=" + senderId + ", name=" + senderName);
