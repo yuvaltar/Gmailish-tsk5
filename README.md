@@ -1,248 +1,354 @@
-# Gmailish-tsk4: Full-Stack Gmail-Inspired Messaging Platform
-
-**GitHub Repository**  
-[https://github.com/yuvaltar/Gmailish-tsk4.git](https://github.com/yuvaltar/Gmailish-tsk4.git)
-
-## Table of Contents
-- [Overview](#overview)
-- [Features](#features)
-- [Architecture](#architecture)
-- [How It Works](#how-it-works)
-- [Supported API Routes](#supported-api-routes)
-- [Persistence](#persistence)
-- [Building and Running](#building-and-running)
-- [Docker Setup](#docker-setup)
-- [Screenshots](#screenshots)
-- [Jira Link](#jira-link)
-- [Authors](#authors)
+Gmailish (Task 5) – Android Offline‑First Gmail‑Inspired Client
+A modern Android client for a Gmail‑like messaging system, featuring offline-first UX, Room local persistence, JWT auth, labels (with server/local mapping), drafts/outbox, and robust sync. It builds on Task 4’s full‑stack foundation (web + Node backend + C++ filter) while focusing here on the native Android implementation and its end‑to‑end flows.
 
-## Overview
+Note on backend for this task: start the Node server with:
 
-Gmailish-tsk4 is a comprehensive **full-stack messaging platform** that brings together the robust backend from task 3 with a modern React frontend. This Gmail-inspired application delivers a complete user experience with **real-time messaging**, **intelligent spam filtering**, and **responsive design**. The system combines a **RESTful Node.js backend**, a **dynamic React frontend**, and a **high-performance C++ Bloom Filter service** for URL blacklisting - all orchestrated through **Docker** for seamless deployment and scalability.
+cd server
 
-## Features
+node app.js
 
-**🎨 Modern User Interface**
-- **Dark mode and light mode toggle**
-- **Responsive sidebar** with collapse functionality (hamburger menu)
-- **Gmail-inspired design** and layout
-- **Real-time updates** without page refreshes
+Table of Contents
+Overview
 
-**📧 Email Management**
-- **Complete inbox management** with read/unread status
-- **Label-based organization** system
-- **Default labels**: Starred, Archived, Deleted, Drafts, and more
-- **Pagination system** (50 mails per page with navigation arrows)
-- **Email composition** and editing capabilities
+Key Features
 
-**🛡️ Security & Authentication**
-- **JWT-based authentication** with 2-hour session duration
-- **Strong password requirements** (8+ characters, uppercase, lowercase, number, special character)
-- **Username uniqueness validation**
-- **Secure user registration** and login
+Architecture
 
-**🚫 Intelligent Spam Protection**
-- **Advanced spam detection** using Bloom Filter technology
-- **URL-based blacklisting** - emails containing flagged URLs automatically go to spam
-- **Real-time spam classification** and filtering
+Data Model and Mapping
 
-**👤 User Profile Management**
-- **Profile picture upload** and display
-- **Comprehensive user registration** with validation
-- **Persistent user sessions** with JWT tokens
+Offline‑First and Sync Strategy
 
-**⚡ Performance & Scalability**
-- **Component-based React architecture** for optimal rendering
-- **Real-time data fetching** and updates
-- **Modular backend** with RESTful API design
+Android App Structure
 
-## Architecture
+API Endpoints Used
 
-The system follows a modern **three-tier architecture**:
+Building and Running (Android)
 
-**Frontend Layer (React - Port 3001)**
-- **Component-based UI** with pages and reusable components
-- **State management** using React hooks
-- **Real-time communication** with backend APIs
-- **Responsive design** with theme switching capabilities
+Developer Notes and Gotchas
 
-**Backend Layer (Express.js - Port 3000)**
-- **RESTful API server** handling all business logic
-- **JWT-based authentication** middleware
-- **In-memory data storage** for users, emails, and labels
-- **Integration with Bloom Filter** service for spam detection
+Suggested Screenshots (what to capture, where to put them)
 
-**Filter Service Layer (C++ - Port 4000)**
-- **High-performance Bloom Filter** implementation
-- **TCP server** for URL blacklist management
-- **Persistent blacklist data** storage
-- **Real-time spam URL detection** and classification
+Roadmap and Extensions
 
-## How It Works
+Authors
 
-The Gmailish platform orchestrates **seamless communication** between its three core services. Users interact with the **intuitive React frontend**, which communicates with the Express backend through **secure JWT-authenticated API calls**. The backend processes all **email operations**, **user management**, and **label organization** while consulting the **C++ Bloom Filter service** for **intelligent spam detection**. When emails are sent, **URLs within the content are analyzed** against the blacklist, and **suspicious emails are automatically routed** to the spam folder. The system maintains **session persistence** through JWT tokens, allowing users to stay logged in for up to **2 hours without re-authentication**.
+Overview
+The Android Gmailish app provides a complete mail experience with local persistence and offline capabilities:
 
-## Supported API Routes
+Works online and offline, queuing operations and syncing when connectivity returns
 
-The backend maintains the same comprehensive RESTful API from task 3, including:
+Persists data locally via Room for fast UI and resilience
 
-- **User Management**: Registration, authentication, and profile operations
-- **Email Operations**: Send, receive, update, delete, and search functionality  
-- **Label Management**: Create, update, delete, and organize email labels
-- **Blacklist Control**: Add/remove URLs from spam detection system
-- **Authentication**: JWT token generation and validation
+Mirrors core mailbox flows (Inbox/Primary, Sent, Drafts, Starred, custom labels)
 
-All routes are secured with appropriate authentication middleware and input validation.
+Uses JWT for authenticated operations against the Node backend
 
-## Persistence
+Handles label mapping between local canonical names and server names (e.g., primary ↔ inbox)
 
-Currently, the application uses an in-memory storage system:
-- **Application Data**: Users, emails, and labels are stored in memory on the web server
-- **Blacklist Data**: Persistently stored by the Bloom Filter service to disk
-- **Session Data**: JWT tokens manage user sessions with 2-hour expiration
+Provides end‑to‑end flows from login to compose, search, label management, and detailed mail view
 
-*Note: Application data is reset upon server restart, while blacklist data persists across restarts.*
+Key Features
+Authentication
 
-## Building and Running
+Login via email/password; JWT stored in SharedPreferences
 
-### Local Development
+Session token reused across API calls
 
-**Prerequisites**: Node.js, npm, and a Linux environment for the C++ Bloom Filter service.
+Mailbox
 
-**1. Start the React Frontend:**
+All inboxes/Primary, Sent, Drafts, Starred, Archive, Spam, Trash, custom labels
 
-*cd react*
+Read/unread state and starring supported
 
-*npm start*
+Search across mails
 
+Compose, Drafts, Outbox
 
-*Runs on port 3001
+Save drafts locally to “drafts” label
 
-**2. Start the Express Backend:**
+Send online (immediate) or offline (queued to Outbox with pending operations)
 
-*cd server*
+After connectivity resumes, pending sends are processed
 
-*node app.js*
+Labels
 
-*Runs on port 3000
+Create labels, assign/remove on messages
 
-**3. Start the Bloom Filter Service (Linux only):**
+Move messages between labels (offline‑first with server sync)
 
-*cd src*
+Offline‑first UX
 
-*g++ main.cpp BloomFilter/BloomFilter.cpp BloomFilter/BlackList.cpp BloomFilter/url.cpp server/server.cpp server/SessionHandler.cpp server/CommandManager.cpp -I. -IBloomFilter -Iserver -o cpp_server -pthread -std=gnu++17*
+Read cached mail; open details offline
 
-*./cpp_server 4000 1024 3 5*
+Queue sends, label changes, and moves as pending ops
 
+Automatic sync worker to process pending operations
 
-*Runs on port 4000
+Theming and UI polish
 
-### Access the Application
-Navigate to `http://localhost:3001` to access the Gmailish platform.
+Light/Dark mode supported by Android theme
 
-## Docker Setup
+Timestamp normalization and pretty formatting
 
-### Build and Run All Services
-**Build and start all containers:**
+Avatars: image or initial fallback
 
-*docker-compose up --build*
+Architecture
+Presentation
 
-**Run without rebuilding:**
+Activities: LoginActivity, RegisterActivity, InboxActivity, MailViewActivity, ComposeActivity, CreateLabelActivity
 
-*docker-compose up*
+RecyclerView lists for mail items
 
+ViewModels per screen to handle state and network operations
 
-## Screenshots
+Domain/Data
 
-### 1. Setup & Docker
+Repositories: MailRepository, LabelRepository, UserRepository
 
-![Docker running by terminal](<screenshots/20. docker running by terminal.png>)
-*Docker containers running and monitored through terminal interface*
+Local DB: Room (AppDatabase with DAOs: mailDao, labelDao, mailLabelDao, pendingOperationDao)
 
-![All three containers working](<screenshots/1. all 3 containers working .png>)
-*All three Docker containers running successfully, you can see how the "docker-compose" command successfully creates the 3 containers in the Docker Desktop*
+Pending operations queue to support offline actions
 
-### 2. User Registration & Authentication
+Networking
 
-![Successful user registration](<screenshots/2. registration success.png>)
-*Successful user registration with profile picture upload*
+OkHttp for REST calls
 
-![Username uniqueness validation](<screenshots/3. cant register with the same username.png>)
-*Validation preventing duplicate username registrations*
+JWT added as Authorization: Bearer header
 
-![Strong password validation](<screenshots/4. registration failure because Password isnt safe.png>)
-*Enforcing strong password requirements for security*
+Endpoints under http://10.0.2.2:3000/
 
-### 3. Interface & Display Modes
+Storage
 
-![Light vs Dark mode comparison](<screenshots/5. dark mode vs light mode.png>)
-*Interface shown in both light and dark modes*
+SharedPreferences for JWT and basic user profile (id, username)
 
-![Collapsed sidebar in both modes](<screenshots/6. Dark mode vs light mode collapsed.png>)
-*Responsive sidebar collapsed in both light and dark themes*
+Room for mails, labels, cross‑refs, and pending operations
 
-### 4. Core Email Functionality
+Sync
 
-![Sending and receiving mail](<screenshots/7. sending a mail from one user to another ( one will appear in sent the other in inbox) .png>)
-*Email sent from one user appears in the recipient's inbox and the sender's "Sent" folder*
+Background worker (SyncPendingWorker) enqueues retries and reconciles local ↔ server
 
-![Read vs Unread email status](<screenshots/8. a difference between a mail that was read to a mail which wasnt marked as read.png>)
-*Visual distinction between emails that have been read and those that are unread*
+Data Model and Mapping
+MailEntity
 
-![Starring an email](<screenshots/9. toggle a mail with a star would make it in the star labels.png>)
-*Starring an email correctly adds it to the "Starred" label*
+Fields include id, senderId/name, recipientId/name/email, subject, content, timestamp, ownerId, read, starred, draft flag
 
-![Pagination for large email volumes](<screenshots/21. more than 50 mails can go to another page of mails.png>)
-*Pagination system allowing navigation through more than 50 emails across multiple pages*
+LabelEntity
 
-![Creating a draft email](<screenshots/22. creating a mail. without sendong will be stored at the draft.png>)
-*Composing an email without sending automatically saves it as a draft*
+id, ownerId, name
 
-![Draft email appearing in drafts folder](<screenshots/23. appearing in the draft.png>)
-*Unsent email successfully stored and displayed in the Drafts folder*
+MailLabelCrossRef
 
-### 5. Label Management
+mailId, labelId
 
-![Creating custom labels](<screenshots/10. creating 3 more labels named work project and school.png>)
-*Creating new custom labels: "work", "project", and "school"*
+Label normalization:
 
-![Detailed mail view](<screenshots/11. mail view.png>)
-*Interface for viewing the full content of a single email*
+Local canonical names: primary, starred, drafts, sent, outbox, archive, spam, trash, promotions, social, updates
 
-![Assigning labels from mail view](<screenshots/12. we can like lables through the mailview (including the mails we just have created).png>)
-*Applying labels directly from the detailed mail view*
+Server mapping:
 
-![Viewing emails by label](<screenshots/13. work is labeled so we can see it in the Work lables .png>)
-*Filtering and viewing all emails assigned the "Work" label*
+primary (local) ↔ inbox (server)
 
-![Bulk email operations](<screenshots/14. we can mark all mails read unread or other label.png>)
-*Selecting multiple emails to perform bulk actions like marking as read or assigning labels*
+All other labels pass through lower‑cased (e.g., starred ↔ starred)
 
-### 6. Advanced Features & Security
+Timestamp handling:
 
-![Search functionality](<screenshots/15. search functionality.png>)
-*Searching the inbox for specific email content*
+Robust parsing for ISO‑8601, epoch, and legacy java.util.Date strings
 
-![JWT token for logged-in user](<screenshots/16. having a unique token (jwt) for each user logged in before logged out.png>)
-*A unique JWT is present for an authenticated user session*
+Pretty formatting: HH:mm for today, otherwise MMM d
 
-![JWT token after logout](<screenshots/17. no jwt after logging out.png>)
-*The JWT token is successfully cleared after the user logs out*
+Offline‑First and Sync Strategy
+Reading
 
-![Spam detection for malicious URL](<screenshots/18. having a bad url in the spam.png>)
-*An email containing a blacklisted URL is automatically moved to the spam folder*
+All list/detail views read immediately from Room; network refresh updates Room and UI
 
-![Persistent spam filtering](<screenshots/19. sending the same bad url in a different mail and it goes directly to spam.png>)
-*Subsequent emails with the same malicious URL are also automatically filtered to spam*
+Drafts
 
+Saved locally under drafts label; edited drafts loaded by id
 
-## Jira Link
+Sending
 
-Project planning and task tracking are managed in Jira:
-*[Jira link to be provided]*
+Online: POST to /api/mails; save sent copy locally (sent label), remove draft if applicable
 
-## Authors
+Offline/no token: create Outbox mail + Pending MAIL_SEND; worker sends later
 
-- **Yuval Tarnopolsky**
-- **Tal Amitay**  
-- **Itay Smouha**
+Labeling and Moving
+
+Local UI reflects changes instantly; Room updated first
+
+Online path PATCHes label add/remove
+
+On failure/offline, enqueue Pending LABEL_MOVE/operations, retried by worker
+
+Star toggle
+
+Immediate local toggle + label cross‑ref, then best‑effort server PATCH
+
+Android App Structure
+Authentication
+LoginActivity + LoginViewModel
+
+POST /api/tokens with email/password
+
+Extract JWT from Set‑Cookie or response; save to SharedPreferences
+
+On success, navigate to Inbox
+
+RegisterActivity + RegisterViewModel
+
+Multipart form to POST /api/users (firstName, lastName, username, password, gender, birthdate, optional picture)
+
+On success, save minimal user to Room and navigate to Login
+
+Inbox
+InboxActivity + InboxViewModel + EmailAdapter
+
+Loads current user: GET /api/users/me; caches id/username/pictureUrl
+
+Fetches mail lists:
+
+All mails: GET /api/mails
+
+By label: GET /api/mails?label={serverLabel}
+
+Search: GET /api/mails/search/{query}
+
+Syncs server results into Room and emits LiveData for UI
+
+Unread counts computed from server payload
+
+EmailAdapter
+
+Displays sender, subject, snippet, time; starred state; draft marker
+
+On star click: update local immediately, then PATCH label add/remove
+
+On item click: open MailViewActivity (drafts open ComposeActivity)
+
+Mail View
+MailViewActivity + MailViewModel
+
+Loads detail from Room immediately, then refresh via GET /api/mails/{id}
+
+Normalizes labels for UI; marks as read via PATCH /api/mails/{id}/read
+
+Star toggle: add/remove starred label (offline‑first)
+
+Delete: DELETE /api/mails/{id} (local delete on success)
+
+Move to label: offline‑first; local move then server add/remove with fallback queue
+
+Reply/Forward:
+
+Extract sender email if present; else resolve via GET /api/users/{senderId}; else fallback name@gmailish.com
+
+Opens ComposeActivity prefilled (reply fills To; forward leaves To empty)
+
+Compose
+ComposeActivity + ComposeViewModel
+
+New compose or edit draft by id
+
+Auto-save draft on back or onPause (unless fields empty)
+
+Send:
+
+Online: POST /api/mails, save local “sent”, remove draft if used
+
+Offline: save to Outbox + enqueue Pending MAIL_SEND + remove draft
+
+Emits sendSuccess payload for optional downstream usage
+
+Labels
+CreateLabelActivity
+
+Local create LabelEntity; enqueue Pending LABEL_CREATE; schedule sync
+
+Caches label names in SharedPreferences for pickers
+
+Header and Profile
+HeaderManager
+
+Observes current user; displays avatar image or initial
+
+Popup to logout (clears JWT and returns to Login)
+
+API Endpoints Used (server hints)
+Auth
+
+POST /api/tokens → returns token (Set‑Cookie or body)
+
+GET /api/users/me → user id, username, pictureUrl
+
+GET /api/users/{id} → for resolving sender emails
+
+Mails
+
+GET /api/mails → list, optionally filtered by label (?label=inbox, updates, etc.)
+
+GET /api/mails/search/{query}
+
+GET /api/mails/{id}
+
+POST /api/mails → send mail
+
+PATCH /api/mails/{id}/read
+
+PATCH /api/mails/{id}/label → {label[, action:"remove"]}
+
+DELETE /api/mails/{id}
+
+Users
+
+POST /api/users → multipart register (form fields + optional picture)
+
+Labels
+
+POST /api/labels → create new label (used by “New label” flow)
+
+Note: For Task 5 Android, the backend is assumed running locally at 10.0.2.2:3000.
+
+Building and Running (Android)
+Requirements
+
+Android Studio (Giraffe+), Gradle, Java 11+
+
+Emulator or device
+
+Steps
+
+Ensure the Node backend is running:
+
+cd server
+
+node app.js
+
+Open the Android project in Android Studio
+
+Build and Run on an emulator/device
+
+Register a user in the app, then login
+
+Load Inbox; try compose/send, star, search, offline actions
+
+Emulator Networking
+
+10.0.2.2 points to the host machine; keep server on port 3000
+
+Developer Notes and Gotchas
+Label mapping is critical:
+
+UI and Room use primary; server uses inbox
+
+Timestamps arrive in different formats; robust parsing is implemented
+
+Star toggle in Drafts is disabled
+
+Pending operations must be idempotent and retried; ensure worker is scheduled after enqueuing
+
+Compose “sendOffline” removes related draft immediately to avoid duplicates
+
+Email resolution in reply:
+
+Prefer explicit email fields, then server lookup by senderId, then fallback from name
+
+Registration uses multipart with optional image; if backend returns no id, a UUID is generated locally for Room
