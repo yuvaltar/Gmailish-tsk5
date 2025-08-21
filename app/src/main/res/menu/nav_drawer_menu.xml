@@ -2,7 +2,8 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- TOP SECTION -->
-    <group android:checkableBehavior="single">
+    <group android:checkableBehavior="single"
+        android:background="?attr/colorSurface">
 
         <item
             android:id="@+id/nav_all_inboxes"
