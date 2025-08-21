@@ -11,10 +11,11 @@ import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 
 import com.example.gmailish.data.db.AppDatabase;
+import com.example.gmailish.data.entity.MailEntity;
 import com.example.gmailish.data.entity.PendingOperationEntity;
 import com.example.gmailish.data.model.PendingOperationType;
-import com.example.gmailish.data.repository.MailRepository;
 import com.example.gmailish.data.repository.LabelRepository;
+import com.example.gmailish.data.repository.MailRepository;
 import com.example.gmailish.data.sync.SyncPendingWorker;
 
 import org.json.JSONArray;
@@ -40,19 +41,21 @@ import okhttp3.Response;
 @HiltViewModel
 public class ComposeViewModel extends ViewModel {
 
-
     private static final String TAG = "ComposeVM";
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
-    public MutableLiveData<String> message = new MutableLiveData<>();
-    public MutableLiveData<String> sendSuccess = new MutableLiveData<>();
+    public final MutableLiveData<String> message = new MutableLiveData<>();
+    public final MutableLiveData<String> sendSuccess = new MutableLiveData<>();
+
+    /** Emits the active draft id after save/update so the Activity can keep it */
+    public final MutableLiveData<String> draftIdLive = new MutableLiveData<>();
 
     private final OkHttpClient client = new OkHttpClient();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
 
     private final MailRepository mailRepo;
     private final LabelRepository labelRepo;
-    private final AppDatabase db; // Injected DB for pending ops
+    private final AppDatabase db;
 
     @Inject
     public ComposeViewModel(MailRepository mailRepo, LabelRepository labelRepo, AppDatabase db) {
@@ -61,8 +64,89 @@ public class ComposeViewModel extends ViewModel {
         this.db = db;
     }
 
-    // Public API: send email with current token stored in prefs
+    /* =========================
+       DRAFTS
+       ========================= */
+
+    /** Save or update a draft. Returns/Publishes the draft id. */
+    public void saveOrUpdateDraft(Context ctx,
+                                  String existingDraftIdOrNull,
+                                  String to,
+                                  String subject,
+                                  String content) {
+        String ownerId = getOwnerId(ctx);
+        if (isEmpty(ownerId)) {
+            message.setValue("Missing current user");
+            return;
+        }
+
+        // Don't create empty drafts
+        if (isEmpty(to) && isEmpty(subject) && isEmpty(content)) {
+            message.setValue("Nothing to save");
+            return;
+        }
+
+        final String draftId = (existingDraftIdOrNull != null && !existingDraftIdOrNull.isEmpty())
+                ? existingDraftIdOrNull
+                : "draft-" + UUID.randomUUID();
+
+        io.execute(() -> {
+            try {
+                Date now = new Date();
+
+                // We save a regular MailEntity owned by the current user and link it to the "drafts" label.
+                MailEntity draft = new MailEntity(
+                        draftId,
+                        ownerId,              // senderId (me)
+                        "Me",                 // senderName (displayed locally)
+                        to != null ? to : "", // recipientId (we store the email as id for now)
+                        to,                   // recipientName (fallback to email)
+                        to,                   // recipientEmail
+                        subject,
+                        content,
+                        now,
+                        ownerId,
+                        true,                 // read
+                        false                 // starred
+                );
+
+                mailRepo.saveMail(draft);
+                mailRepo.ensureLabelAndLink(draftId, ownerId, "drafts");
+
+                draftIdLive.postValue(draftId);
+                message.postValue("Draft saved");
+            } catch (Exception e) {
+                Log.e(TAG, "saveOrUpdateDraft error: " + e.getMessage(), e);
+                message.postValue("Failed to save draft");
+            }
+        });
+    }
+
+    /** Remove a draft completely (used if user discards). */
+    public void discardDraft(Context ctx, String draftId) {
+        if (isEmpty(draftId)) return;
+        io.execute(() -> {
+            try {
+                mailRepo.deleteMail(draftId);
+                message.postValue("Draft discarded");
+            } catch (Exception e) {
+                Log.e(TAG, "discardDraft error: " + e.getMessage(), e);
+                message.postValue("Failed to discard draft");
+            }
+        });
+    }
+
+    /* =========================
+       SENDING
+       ========================= */
+
+    /** Original API (no draft id). */
     public void sendEmail(Context ctx, String to, String subject, String content) {
+        sendEmail(ctx, to, subject, content, null);
+    }
+
+    /** New API: if draftId != null we will delete the draft after a successful send. */
+    public void sendEmail(Context ctx, String to, String subject, String content, String draftId) {
         if (isEmpty(to) || isEmpty(subject) || isEmpty(content)) {
             message.setValue("Please fill all fields");
             return;
@@ -73,24 +157,24 @@ public class ComposeViewModel extends ViewModel {
             return;
         }
         if (isOnline(ctx)) {
-            sendOnline(ctx, ownerId, to, subject, content);
+            sendOnline(ctx, ownerId, to, subject, content, draftId);
         } else {
-            sendOffline(ctx, ownerId, to, subject, content);
+            sendOffline(ctx, ownerId, to, subject, content, draftId);
         }
     }
 
     // ONLINE path
-    private void sendOnline(Context ctx, String ownerId, String to, String subject, String content) {
+    private void sendOnline(Context ctx, String ownerId, String to, String subject, String content, String draftId) {
         String jwt = getJwt(ctx);
         if (isEmpty(jwt)) {
             // treat as offline if no token
-            sendOffline(ctx, ownerId, to, subject, content);
+            sendOffline(ctx, ownerId, to, subject, content, draftId);
             return;
         }
 
         try {
             JSONObject json = new JSONObject();
-            JSONArray toArray = new JSONArray().put(to); // adapt if API accepts string
+            JSONArray toArray = new JSONArray().put(to); // adapt if server expects array
             json.put("to", toArray);
             json.put("subject", subject);
             json.put("content", content);
@@ -104,13 +188,13 @@ public class ComposeViewModel extends ViewModel {
             client.newCall(req).enqueue(new Callback() {
                 @Override public void onFailure(Call call, IOException e) {
                     Log.e(TAG, "sendOnline network error: " + e.getMessage());
-                    sendOffline(ctx, ownerId, to, subject, content);
+                    sendOffline(ctx, ownerId, to, subject, content, draftId);
                 }
 
                 @Override public void onResponse(Call call, Response response) throws IOException {
                     if (!response.isSuccessful()) {
                         Log.e(TAG, "sendOnline server code=" + response.code());
-                        sendOffline(ctx, ownerId, to, subject, content);
+                        sendOffline(ctx, ownerId, to, subject, content, draftId);
                         return;
                     }
                     String bodyStr = response.body() != null ? response.body().string() : "{}";
@@ -120,16 +204,23 @@ public class ComposeViewModel extends ViewModel {
                         serverId = obj.optString("id", obj.optString("_id", UUID.randomUUID().toString()));
                     } catch (Exception ignore) { }
 
-                    final String finalId = (serverId != null && !serverId.isEmpty()) ? serverId : UUID.randomUUID().toString();
+                    final String finalId = (serverId != null && !serverId.isEmpty())
+                            ? serverId : UUID.randomUUID().toString();
 
                     io.execute(() -> {
                         try {
                             // Save in Room as "sent"
                             mailRepo.saveSentMailLocal(finalId, ownerId, to, subject, content, new Date());
                             mailRepo.ensureLabelAndLink(finalId, ownerId, "sent");
+
+                            // If we sent from a draft, remove it
+                            if (draftId != null && !draftId.isEmpty()) {
+                                try { mailRepo.deleteMail(draftId); } catch (Exception ignore) {}
+                            }
+
                             message.postValue("Sent");
 
-                            // Emit payload for UI (optional legacy flow)
+                            // Emit payload (legacy UI hook)
                             try {
                                 JSONObject emitted = new JSONObject();
                                 emitted.put("id", finalId);
@@ -147,12 +238,12 @@ public class ComposeViewModel extends ViewModel {
             });
         } catch (Exception ex) {
             Log.e(TAG, "sendOnline JSON build error: " + ex.getMessage(), ex);
-            sendOffline(ctx, ownerId, to, subject, content);
+            sendOffline(ctx, ownerId, to, subject, content, draftId);
         }
     }
 
     // OFFLINE path: create Outbox mail + pending MAIL_SEND
-    private void sendOffline(Context ctx, String ownerId, String to, String subject, String content) {
+    private void sendOffline(Context ctx, String ownerId, String to, String subject, String content, String draftId) {
         final String localId = "local-" + UUID.randomUUID();
         io.execute(() -> {
             try {
@@ -178,7 +269,12 @@ public class ComposeViewModel extends ViewModel {
                         localId
                 ));
 
-                // 3) Kick the worker (unique)
+                // 3) If we sent from a draft, remove it now (it’s queued for sending)
+                if (draftId != null && !draftId.isEmpty()) {
+                    try { mailRepo.deleteMail(draftId); } catch (Exception ignore) {}
+                }
+
+                // 4) Kick the worker
                 SyncPendingWorker.enqueue(ctx);
 
                 message.postValue("Saved to Outbox (queued for send)");
@@ -198,7 +294,10 @@ public class ComposeViewModel extends ViewModel {
         });
     }
 
-    // Helpers
+    /* =========================
+       Helpers
+       ========================= */
+
     private boolean isOnline(Context ctx) {
         ConnectivityManager cm = (ConnectivityManager) ctx.getSystemService(Context.CONNECTIVITY_SERVICE);
         if (cm == null) return false;

@@ -1,5 +1,6 @@
 package com.example.gmailish.ui.inbox;
 
+import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.text.TextUtils;
@@ -13,6 +14,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import com.example.gmailish.R;
 import com.example.gmailish.data.dao.PendingOperationDao;
 import com.example.gmailish.data.db.AppDatabase;
+import com.example.gmailish.data.db.AppDbProvider;
 import com.example.gmailish.data.entity.LabelEntity;
 import com.example.gmailish.data.entity.PendingOperationEntity;
 import com.example.gmailish.data.model.PendingOperationType;
@@ -115,22 +117,9 @@ public class CreateLabelActivity extends AppCompatActivity {
         return prefs.getString("user_id", null);
     }
 
-    public static final class DbHolder {
-        private static volatile AppDatabase INSTANCE;
-
-        static AppDatabase getInstance(android.content.Context context) {
-            if (INSTANCE == null) {
-                synchronized (DbHolder.class) {
-                    if (INSTANCE == null) {
-                        INSTANCE = androidx.room.Room.databaseBuilder(
-                                context.getApplicationContext(),
-                                AppDatabase.class,
-                                "gmailish.db"
-                        ).fallbackToDestructiveMigration().build();
-                    }
-                }
-            }
-            return INSTANCE;
+    private static final class DbHolder {
+        static AppDatabase getInstance(Context context) {
+            return AppDbProvider.get(context.getApplicationContext());
         }
     }
 }

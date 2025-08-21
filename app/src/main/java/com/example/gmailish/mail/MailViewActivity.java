@@ -7,7 +7,6 @@ import android.os.Bundle;
 import android.view.View;
 import android.widget.EditText;
 import android.widget.ImageButton;
-
 import android.widget.LinearLayout;
 import android.widget.PopupMenu;
 import android.widget.TextView;
@@ -27,10 +26,7 @@ import java.util.Date;
 import java.util.Locale;
 import java.util.List;
 
-
 import dagger.hilt.android.AndroidEntryPoint;
-
-@AndroidEntryPoint
 
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -43,7 +39,7 @@ import okhttp3.Response;
 /**
  * MailViewActivity – reply now fills the real sender email and the reply/forward boxes are clickable.
  */
-
+@AndroidEntryPoint
 public class MailViewActivity extends AppCompatActivity {
 
     private TextView senderText, recipientText, subjectText, contentText, timestampText, senderIcon;
@@ -89,51 +85,29 @@ public class MailViewActivity extends AppCompatActivity {
 
         viewModel = new ViewModelProvider(this).get(MailViewModel.class);
 
-        viewModel.init(getApplicationContext());
-
         SharedPreferences prefs = getSharedPreferences("prefs", MODE_PRIVATE);
         jwtToken = prefs.getString("jwt", null);
         mailId   = getIntent().getStringExtra("mailId");
 
         preloadUserLabelsFromPrefs();
 
+        // ==== FIXED: null-safe, single binding path ====
         viewModel.mailData.observe(this, mail -> {
-            if (mail == null){
-              bindMailToViews(mail);
-              return;
-            }
-
-            currentMail = mail;
-
-            senderText.setText(mail.optString("senderName"));
-            recipientText.setText("To: " + mail.optString("recipientName") + " <" + mail.optString("recipientEmail") + ">");
-            subjectText.setText(mail.optString("subject"));
-            contentText.setText(mail.optString("content"));
-
-            String rawTime = mail.optString("timestamp");
-            try { timestampText.setText(formatIso8601ToMonthDay(rawTime)); }
-            catch (Exception e) { timestampText.setText(rawTime); }
-
-            String senderName = mail.optString("senderName");
-            if (senderName != null && !senderName.isEmpty()) {
-                senderIcon.setText(senderName.substring(0, 1).toUpperCase());
-
-            }
-
-            currentLabels = mail.optJSONArray("labels");
-            isStarred = currentLabels != null && currentLabels.toString().toLowerCase(Locale.ROOT).contains("starred");
-            updateStarIcon();
+            if (mail == null) return;          // nothing to bind yet
+            currentMail = mail;                // keep for reply/forward
+            bindMailToViews(mail);             // bind once (no duplicates)
         });
 
         viewModel.errorMessage.observe(this, msg ->
-
                 Toast.makeText(this, msg, Toast.LENGTH_SHORT).show());
-      
-       // OFFLINE-FIRST load and then refresh if online
+
+        // OFFLINE-FIRST load and then refresh if online
         viewModel.loadMailDetail(getApplicationContext(), mailId, jwtToken);
 
+        // (Optional improvement: this next line is redundant with loadMailDetail)
         viewModel.fetchMailById(mailId, jwtToken);
-      // Mark as read (network + local)
+
+        // Mark as read (network + local)
         if (jwtToken != null && !jwtToken.isEmpty()) {
             viewModel.markAsRead(mailId, jwtToken);
         }
@@ -197,7 +171,6 @@ public class MailViewActivity extends AppCompatActivity {
         });
     }
 
-
     private void bindMailToViews(JSONObject mail) {
         senderText.setText(mail.optString("senderName"));
         recipientText.setText("To: " + mail.optString("recipientName") + " <" + mail.optString("recipientEmail") + ">");
@@ -230,7 +203,7 @@ public class MailViewActivity extends AppCompatActivity {
         for (int i = 0; i < array.length(); i++) {
             if (label.equalsIgnoreCase(array.optString(i))) return true;
         }
-      return false;
+        return false;
     }
 
     /* ================= Reply helpers ================= */
@@ -533,18 +506,12 @@ public class MailViewActivity extends AppCompatActivity {
                 labelsToRemove.add("inbox".equalsIgnoreCase(label) ? "primary" : label);
             }
         }
-        return false;
-    }
-
-    private void updateStarIcon() {
-        starButton.setImageResource(isStarred ? R.drawable.ic_star_shine : R.drawable.ic_star);
     }
 
     private void showMoveToDialog() {
         String[] folderNames = {"Primary", "Promotions", "Social", "Updates", "Spam", "Trash", "Drafts", "Starred", "Important", "Archive"};
         String[] labelValues = {"primary", "promotions", "social", "updates", "spam", "trash", "drafts", "starred", "important", "archive"};
         new AlertDialog.Builder(MailViewActivity.this)
-
                 .setTitle("Move to")
                 .setItems(folderNames, (dialog, which) -> {
                     String targetLabel = labelValues[which];
@@ -558,7 +525,6 @@ public class MailViewActivity extends AppCompatActivity {
                 .setNegativeButton("Cancel", null)
                 .show();
     }
-
 
     private void showLabelAssignmentDialog() {
         List<String> options = new ArrayList<>();

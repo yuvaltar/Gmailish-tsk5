@@ -21,6 +21,7 @@ import com.example.gmailish.data.dao.PendingOperationDao;
 import com.example.gmailish.data.db.AppDatabase;
 import com.example.gmailish.data.entity.LabelEntity;
 import com.example.gmailish.data.entity.MailEntity;
+import com.example.gmailish.data.entity.MailLabelCrossRef;
 import com.example.gmailish.data.entity.PendingOperationEntity;
 import com.example.gmailish.data.model.PendingOperationType;
 import com.example.gmailish.data.repository.LabelRepository;
@@ -39,17 +40,18 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import com.example.gmailish.data.db.AppDbProvider;
 
+/** Processes offline/queued ops when network is available. */
 public class SyncPendingWorker extends Worker {
 
+    private static final MediaType JSON = MediaType.parse("application/json");
+    private static final String LABELS_URL = "http://10.0.2.2:3000/api/labels";
+    private static final String MAILS_URL  = "http://10.0.2.2:3000/api/mails";
 
     private final PendingOperationRepository pendingRepo;
     private final LabelRepository labelRepo;
     private final OkHttpClient client;
-
-    private static final MediaType JSON = MediaType.parse("application/json");
-    private static final String LABELS_URL = "http://10.0.2.2:3000/api/labels";
-    private static final String MAILS_URL = "http://10.0.2.2:3000/api/mails";
 
     private final AppDatabase db;
     private final MailDao mailDao;
@@ -58,7 +60,7 @@ public class SyncPendingWorker extends Worker {
     public SyncPendingWorker(@NonNull Context context, @NonNull WorkerParameters params) {
         super(context, params);
 
-        db = DbHolder.getInstance(context);
+        db = AppDbProvider.get(context.getApplicationContext());
         PendingOperationDao pendingDao = db.pendingOperationDao();
         LabelDao labelDao = db.labelDao();
         mailDao = db.mailDao();
@@ -77,8 +79,15 @@ public class SyncPendingWorker extends Worker {
             try {
                 if (PendingOperationType.LABEL_CREATE.equals(op.type)) {
                     if (!handleLabelCreate(op)) continue;
+
                 } else if (PendingOperationType.MAIL_SEND.equals(op.type)) {
                     if (!handleMailSend(op)) continue;
+
+                } else if (PendingOperationType.DRAFT_SAVE.equals(op.type)) {
+                    if (!handleDraftSave(op)) continue;
+
+                } else if (PendingOperationType.DRAFT_SEND.equals(op.type)) {
+                    if (!handleDraftSend(op)) continue;
                 }
             } catch (IOException ioe) {
                 pendingRepo.incrementRetry(op.id);
@@ -91,7 +100,9 @@ public class SyncPendingWorker extends Worker {
         return Result.success();
     }
 
-    // LABEL_CREATE handler (unchanged from your logic, condensed)
+    /* =========================
+       LABEL_CREATE
+       ========================= */
     private boolean handleLabelCreate(PendingOperationEntity op) throws Exception {
         JSONObject payload = new JSONObject(op.payloadJson);
         String name = payload.optString("name", null);
@@ -120,6 +131,7 @@ public class SyncPendingWorker extends Worker {
                 String finalId = serverId != null ? serverId : localId;
                 String finalOwner = serverOwnerId != null ? serverOwnerId : (ownerId != null ? ownerId : "");
                 labelRepo.saveLabel(new LabelEntity(finalId, finalOwner, serverName));
+
                 if (localId != null && serverId != null && !serverId.equals(localId)) {
                     labelRepo.deleteLabel(localId);
                 }
@@ -137,7 +149,9 @@ public class SyncPendingWorker extends Worker {
         return true;
     }
 
-    // MAIL_SEND handler
+    /* =========================
+       MAIL_SEND (Outbox → Sent)
+       ========================= */
     private boolean handleMailSend(PendingOperationEntity op) throws Exception {
         JSONObject payload = new JSONObject(op.payloadJson);
         String localId = payload.optString("localId", null);
@@ -147,7 +161,6 @@ public class SyncPendingWorker extends Worker {
         String content = payload.optString("content", null);
 
         if (localId == null || ownerId == null || to == null) {
-            // malformed
             pendingRepo.delete(op.id);
             return false;
         }
@@ -156,8 +169,7 @@ public class SyncPendingWorker extends Worker {
         String jwt = prefs.getString("jwt", "");
 
         JSONObject body = new JSONObject();
-        JSONArray arr = new JSONArray();
-        arr.put(to);
+        JSONArray arr = new JSONArray().put(to);
         body.put("to", arr);
         body.put("subject", subject != null ? subject : "");
         body.put("content", content != null ? content : "");
@@ -171,59 +183,43 @@ public class SyncPendingWorker extends Worker {
         try (Response response = client.newCall(req).execute()) {
             if (response.isSuccessful()) {
                 String resp = response.body() != null ? response.body().string() : "{}";
-                String serverId = null;
+                String serverId;
                 try {
                     JSONObject obj = new JSONObject(resp);
                     serverId = obj.optString("id", obj.optString("_id", UUID.randomUUID().toString()));
-                } catch (Exception ignore) { }
-
+                } catch (Exception ignore) {
+                    serverId = UUID.randomUUID().toString();
+                }
                 final String finalId = (serverId != null && !serverId.isEmpty()) ? serverId : localId;
 
-                // Replace local outbox mail with server id and label as sent
-                MailEntity local = mailDaoGet(localId);
+                MailEntity local = mailDao.getByIdSync(localId);
                 if (local == null) {
-                    // If missing, create a minimal record
                     local = new MailEntity(
-                            finalId,
-                            ownerId,
-                            "Me",
-                            to,
-                            to,
-                            to,
+                            finalId, ownerId, "Me",
+                            to, to, to,
                             subject != null ? subject : "",
                             content != null ? content : "",
-                            new Date(),
-                            ownerId,
-                            true,
-                            false
+                            new Date(), ownerId,
+                            true, false
                     );
+                    mailDao.upsert(local);
                 } else {
-                    // Recreate with new id
                     MailEntity serverMail = new MailEntity(
                             finalId,
-                            local.getSenderId(),
-                            local.getSenderName(),
-                            local.getRecipientId(),
-                            local.getRecipientName(),
-                            local.getRecipientEmail(),
-                            local.getSubject(),
-                            local.getContent(),
-                            local.getTimestamp(),
-                            local.getOwnerId(),
-                            true,
-                            local.getStarred()
+                            local.getSenderId(), local.getSenderName(),
+                            local.getRecipientId(), local.getRecipientName(), local.getRecipientEmail(),
+                            local.getSubject(), local.getContent(),
+                            local.getTimestamp(), local.getOwnerId(),
+                            true, local.getStarred()
                     );
-                    // delete old local
-                    db.mailLabelDao().clearForMail(localId);
-                    db.mailDao().deleteById(localId);
-                    // insert new
-                    db.mailDao().upsert(serverMail);
+                    mailLabelDao.clearForMail(localId);
+                    mailDao.deleteById(localId);
+                    mailDao.upsert(serverMail);
                 }
 
-                // Ensure labels: remove outbox link (if existed), add sent
-                try { db.mailLabelDao().remove(finalId, "outbox"); } catch (Exception ignore) { }
+                try { mailLabelDao.remove(finalId, "outbox"); } catch (Exception ignore) {}
                 labelRepo.saveLabel(new LabelEntity("sent", ownerId, "sent"));
-                db.mailLabelDao().add(new com.example.gmailish.data.entity.MailLabelCrossRef(finalId, "sent"));
+                mailLabelDao.add(new MailLabelCrossRef(finalId, "sent"));
 
                 pendingRepo.markDone(op.id);
             } else {
@@ -232,7 +228,6 @@ public class SyncPendingWorker extends Worker {
                     pendingRepo.incrementRetry(op.id);
                     return false;
                 } else {
-                    // permanent client error -> mark failed or drop
                     pendingRepo.delete(op.id);
                 }
             }
@@ -240,18 +235,101 @@ public class SyncPendingWorker extends Worker {
         return true;
     }
 
-    private MailEntity mailDaoGet(String id) {
-        // Quick helper via a direct query; since you don't have a getById, do a simple owner scan if needed.
-        // Better: add a @Query("SELECT * FROM mails WHERE id=:id LIMIT 1") in MailDao.
-        try {
-            // Workaround: cheap check using delete/insert pattern not ideal; implement getById in MailDao if possible.
-            return null;
-        } catch (Exception ignore) {
-            return null;
-        }
+    /* =========================
+       DRAFT_SAVE (new)
+       ========================= */
+    private boolean handleDraftSave(PendingOperationEntity op) {
+        // If you don’t sync drafts to server yet, just mark done so the queue clears.
+        // (Your draft is already saved locally by the caller.)
+        pendingRepo.markDone(op.id);
+        return true;
     }
 
-    // Unique work enqueue to avoid duplicate specs
+    /* =========================
+       DRAFT_SEND (new)
+       ========================= */
+    private boolean handleDraftSend(PendingOperationEntity op) throws Exception {
+        // Expected payload fields:
+        // { "draftId": "...", "ownerId": "...", "to": "...", "subject": "...", "content": "..." }
+        JSONObject payload = new JSONObject(op.payloadJson);
+        String draftId = payload.optString("draftId", null);
+        String ownerId = payload.optString("ownerId", null);
+        String to      = payload.optString("to", null);
+        String subject = payload.optString("subject", null);
+        String content = payload.optString("content", null);
+
+        if (draftId == null || ownerId == null || to == null) {
+            // malformed
+            pendingRepo.delete(op.id);
+            return false;
+        }
+
+        // Send to server exactly like MAIL_SEND
+        SharedPreferences prefs = getApplicationContext().getSharedPreferences("prefs", MODE_PRIVATE);
+        String jwt = prefs.getString("jwt", "");
+
+        JSONObject body = new JSONObject();
+        body.put("to", new JSONArray().put(to));
+        body.put("subject", subject != null ? subject : "");
+        body.put("content", content != null ? content : "");
+
+        Request req = new Request.Builder()
+                .url(MAILS_URL)
+                .header("Authorization", jwt.isEmpty() ? "" : "Bearer " + jwt)
+                .post(RequestBody.create(JSON, body.toString()))
+                .build();
+
+        try (Response response = client.newCall(req).execute()) {
+            if (response.isSuccessful()) {
+                String resp = response.body() != null ? response.body().string() : "{}";
+                String serverId;
+                try {
+                    JSONObject obj = new JSONObject(resp);
+                    serverId = obj.optString("id", obj.optString("_id", UUID.randomUUID().toString()));
+                } catch (Exception ignore) {
+                    serverId = UUID.randomUUID().toString();
+                }
+
+                final String finalId = (serverId != null && !serverId.isEmpty()) ? serverId : draftId;
+
+                // 1) Remove the local draft
+                try { mailLabelDao.clearForMail(draftId); } catch (Exception ignore) {}
+                try { mailDao.deleteById(draftId); } catch (Exception ignore) {}
+
+                // 2) Create the local "sent" record
+                MailEntity sent = new MailEntity(
+                        finalId,
+                        ownerId, "Me",
+                        to, to, to,
+                        subject != null ? subject : "",
+                        content != null ? content : "",
+                        new Date(),
+                        ownerId,
+                        true, false
+                );
+                mailDao.upsert(sent);
+                labelRepo.saveLabel(new LabelEntity("sent", ownerId, "sent"));
+                mailLabelDao.add(new MailLabelCrossRef(finalId, "sent"));
+
+                // 3) Done
+                pendingRepo.markDone(op.id);
+            } else {
+                int code = response.code();
+                if (code == 401 || code == 403 || code >= 500) {
+                    pendingRepo.incrementRetry(op.id);
+                    return false;
+                } else {
+                    // permanent client error -> drop
+                    pendingRepo.delete(op.id);
+                }
+            }
+        }
+        return true;
+    }
+
+    /* =========================
+       Enqueue unique work
+       ========================= */
     public static void enqueue(Context context) {
         OneTimeWorkRequest req = new OneTimeWorkRequest.Builder(SyncPendingWorker.class)
                 .setConstraints(new Constraints.Builder()
@@ -266,6 +344,7 @@ public class SyncPendingWorker extends Worker {
         );
     }
 
+    /** Local DB holder (singleton). */
     private static final class DbHolder {
         private static volatile AppDatabase INSTANCE;
         static AppDatabase getInstance(Context context) {

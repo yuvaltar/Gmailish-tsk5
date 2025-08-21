@@ -49,16 +49,30 @@ public class MailViewModel extends ViewModel {
     private String cachedOwnerId;
 
     private final MailRepository mailRepository;
-    private final PendingOperationRepository pendingRepo; // NEW
+    private final PendingOperationRepository pendingRepo;
 
     @Inject
-    public MailViewModel(MailRepository mailRepository, PendingOperationRepository pendingRepo) { // CHANGED
+    public MailViewModel(MailRepository mailRepository, PendingOperationRepository pendingRepo) {
         this.mailRepository = mailRepository;
-        this.pendingRepo = pendingRepo; // NEW
+        this.pendingRepo = pendingRepo;
     }
 
-    private String normalizeLabel(String label) {
-        return label != null && label.equalsIgnoreCase("inbox") ? "primary" : (label != null ? label.toLowerCase() : null);
+    /* =========================
+       Label helpers
+       ========================= */
+
+    /** Local/Room/UI canonical: use "primary" instead of "inbox". */
+    private String normalizeLabelLocal(String label) {
+        if (label == null) return null;
+        String v = label.trim();
+        if (v.equalsIgnoreCase("inbox")) return "primary";
+        return v.toLowerCase();
+    }
+
+    /** Server API canonical: use "inbox" instead of "primary". */
+    private String apiLabel(String label) {
+        if (label == null) return null;
+        return "primary".equalsIgnoreCase(label) ? "inbox" : label.toLowerCase(java.util.Locale.ROOT);
     }
 
     public void setUserLabels(List<JSONObject> labels) {
@@ -81,15 +95,21 @@ public class MailViewModel extends ViewModel {
         return cachedOwnerId;
     }
 
-    // OFFLINE-FIRST detail load
+    /* =========================
+       Detail loading
+       ========================= */
+
     public void loadMailDetail(Context appContext, String mailId, String jwtToken) {
-        // 1) Try local immediately
+        // 1) local immediately
         ioExecutor.execute(() -> {
             try {
                 MailEntity local = mailRepository.getByIdSync(mailId);
                 if (local != null) {
                     List<String> labels = mailRepository.getLabelsForMailSync(mailId);
-                    JSONObject localJson = mailRepository.buildMailJson(local, labels);
+                    // ensure local labels are "primary" not "inbox"
+                    List<String> fixed = new ArrayList<>();
+                    for (String l : labels) fixed.add(normalizeLabelLocal(l));
+                    JSONObject localJson = mailRepository.buildMailJson(local, fixed);
                     if (localJson != null) {
                         mailData.postValue(localJson);
                     }
@@ -99,7 +119,7 @@ public class MailViewModel extends ViewModel {
             }
         });
 
-        // 2) Then refresh from network (if token present)
+        // 2) network refresh (if token present)
         if (jwtToken == null || jwtToken.isEmpty()) {
             Log.w(TAG, "loadMailDetail: no JWT, skipping network");
             return;
@@ -120,34 +140,49 @@ public class MailViewModel extends ViewModel {
             }
 
             @Override public void onResponse(Call call, Response response) throws IOException {
-                Log.d(TAG, "fetchMailById response code=" + response.code());
-                if (!response.isSuccessful()) {
-                    errorMessage.postValue("Error: " + response.code());
-                    return;
-                }
-                try {
-                    String body = response.body() != null ? response.body().string() : "";
-                    Log.v(TAG, "fetchMailById body: " + body);
-                    JSONObject mailJson = new JSONObject(body);
-                    // Post to UI
-                    mailData.postValue(mailJson);
-                    // Cache to Room
-                    ioExecutor.execute(() -> {
-                        try {
-                            MailEntity entity = MailMapper.mailEntityFromJson(mailJson);
-                            List<String> labels = MailMapper.labelIdsFromJson(mailJson);
-                            // upsert mail
-                            mailRepository.saveMail(entity);
-                            // replace label links
-                            String ownerId = entity.getOwnerId();
-                            mailRepository.replaceMailLabels(entity.getId(), labels, ownerId != null ? ownerId : "");
-                        } catch (Exception ex) {
-                            Log.e(TAG, "caching mail error: " + ex.getMessage(), ex);
+                try (Response r = response) {
+                    Log.d(TAG, "fetchMailById response code=" + r.code());
+                    if (!r.isSuccessful()) {
+                        errorMessage.postValue("Error: " + r.code());
+                        return;
+                    }
+                    try {
+                        String body = r.body() != null ? r.body().string() : "";
+                        Log.v(TAG, "fetchMailById body: " + body);
+                        JSONObject mailJson = new JSONObject(body);
+
+                        // Force labels to local canonical ("primary" instead of "inbox") for UI
+                        JSONArray labels = mailJson.optJSONArray("labels");
+                        if (labels != null) {
+                            JSONArray fixed = new JSONArray();
+                            for (int i = 0; i < labels.length(); i++) {
+                                fixed.put(normalizeLabelLocal(labels.optString(i)));
+                            }
+                            mailJson.put("labels", fixed);
                         }
-                    });
-                } catch (Exception e) {
-                    Log.e(TAG, "fetchMailById parse error: " + e.getMessage());
-                    errorMessage.postValue("Parsing error");
+
+                        // Post to UI
+                        mailData.postValue(mailJson);
+
+                        // Cache to Room
+                        ioExecutor.execute(() -> {
+                            try {
+                                MailEntity entity = MailMapper.mailEntityFromJson(mailJson);
+                                List<String> labelsLocal = MailMapper.labelIdsFromJson(mailJson);
+                                // upsert mail
+                                mailRepository.saveMail(entity);
+                                // replace label links
+                                String ownerId = entity.getOwnerId();
+                                mailRepository.replaceMailLabels(
+                                        entity.getId(), labelsLocal, ownerId != null ? ownerId : "");
+                            } catch (Exception ex) {
+                                Log.e(TAG, "caching mail error: " + ex.getMessage(), ex);
+                            }
+                        });
+                    } catch (Exception e) {
+                        Log.e(TAG, "fetchMailById parse error: " + e.getMessage());
+                        errorMessage.postValue("Parsing error");
+                    }
                 }
             }
         });
@@ -171,43 +206,52 @@ public class MailViewModel extends ViewModel {
             }
 
             @Override public void onResponse(Call call, Response response) {
-                Log.d(TAG, "markAsRead response code=" + response.code());
-                if (!response.isSuccessful()) {
-                    Log.e(TAG, "markAsRead failed: " + response.code());
-                    return;
-                }
-                try {
-                    JSONObject cur = mailData.getValue();
-                    if (cur != null) {
-                        cur.put("read", true);
-                        mailData.postValue(cur);
+                try (Response r = response) {
+                    Log.d(TAG, "markAsRead response code=" + r.code());
+                    if (!r.isSuccessful()) {
+                        Log.e(TAG, "markAsRead failed: " + r.code());
+                        return;
                     }
-                } catch (Exception ignored) { }
-                // Cache local state
-                ioExecutor.execute(() -> {
                     try {
-                        mailRepository.setRead(mailId, true);
-                    } catch (Exception e) {
-                        Log.e(TAG, "markAsRead local update error: " + e.getMessage(), e);
-                    }
-                });
+                        JSONObject cur = mailData.getValue();
+                        if (cur != null) {
+                            cur.put("read", true);
+                            mailData.postValue(cur);
+                        }
+                    } catch (Exception ignored) { }
+                    // Cache local state
+                    ioExecutor.execute(() -> {
+                        try {
+                            mailRepository.setRead(mailId, true);
+                        } catch (Exception e) {
+                            Log.e(TAG, "markAsRead local update error: " + e.getMessage(), e);
+                        }
+                    });
+                }
             }
         });
     }
 
+    /* =========================
+       Label mutations (fixed server/local mapping)
+       ========================= */
+
     public void addLabel(String mailId, String label, String jwtToken, Context appContext) {
-        label = normalizeLabel(label);
-        Log.d(TAG, "addLabel: mailId=" + mailId + " label=" + label);
+        String labelLocal = normalizeLabelLocal(label); // for Room/UI
+        String labelServer = apiLabel(labelLocal);      // for REST
+        Log.d(TAG, "addLabel: mailId=" + mailId + " labelLocal=" + labelLocal + " labelServer=" + labelServer);
+
         JSONObject json = new JSONObject();
-        try { json.put("label", label); }
+        try { json.put("label", labelServer); }
         catch (Exception e) { Log.e(TAG, "addLabel JSON build error: " + e.getMessage()); errorMessage.postValue("Add label JSON error"); return; }
+
         RequestBody body = RequestBody.create(JSON, json.toString());
         Request request = new Request.Builder()
                 .url("http://10.0.2.2:3000/api/mails/" + mailId + "/label")
                 .patch(body)
                 .header("Authorization", "Bearer " + jwtToken)
                 .build();
-        final String labelId = label;
+
         client.newCall(request).enqueue(new Callback() {
             @Override public void onFailure(Call call, IOException e) {
                 Log.e(TAG, "addLabel network failure: " + e.getMessage());
@@ -215,39 +259,42 @@ public class MailViewModel extends ViewModel {
             }
 
             @Override public void onResponse(Call call, Response response) throws IOException {
-                Log.d(TAG, "addLabel server response code=" + response.code());
-                if (!response.isSuccessful()) {
-                    errorMessage.postValue("Add label failed: " + response.code());
-                    return;
-                }
-                ioExecutor.execute(() -> {
-                    try {
-                        String ownerId = getOwnerId(appContext);
-                        Log.d(TAG, "addLabel: ownerId=" + ownerId + " upserting label and cross-ref");
-                        mailRepository.addLabelToMailLocal(mailId, labelId, ownerId != null ? ownerId : "", labelId);
-                        // update UI LiveData labels
-                        tryUpdateLabelsInUi(mailId, true, labelId);
-                    } catch (Exception ex) {
-                        Log.e(TAG, "addLabel: local Room add error: " + ex.getMessage(), ex);
+                try (Response r = response) {
+                    Log.d(TAG, "addLabel server response code=" + r.code());
+                    if (!r.isSuccessful()) {
+                        errorMessage.postValue("Add label failed: " + r.code());
+                        return;
                     }
-                });
+                    ioExecutor.execute(() -> {
+                        try {
+                            String ownerId = getOwnerId(appContext);
+                            mailRepository.addLabelToMailLocal(mailId, labelLocal, ownerId != null ? ownerId : "", labelLocal);
+                            tryUpdateLabelsInUi(mailId, true, labelLocal);
+                        } catch (Exception ex) {
+                            Log.e(TAG, "addLabel: local Room add error: " + ex.getMessage(), ex);
+                        }
+                    });
+                }
             }
         });
     }
 
     public void removeLabel(String mailId, String label, String jwtToken, Context appContext) {
-        label = normalizeLabel(label);
-        Log.d(TAG, "removeLabel: mailId=" + mailId + " label=" + label);
+        String labelLocal = normalizeLabelLocal(label); // for Room/UI
+        String labelServer = apiLabel(labelLocal);      // for REST
+        Log.d(TAG, "removeLabel: mailId=" + mailId + " labelLocal=" + labelLocal + " labelServer=" + labelServer);
+
         JSONObject json = new JSONObject();
-        try { json.put("label", label); json.put("action", "remove"); }
+        try { json.put("label", labelServer); json.put("action", "remove"); }
         catch (Exception e) { Log.e(TAG, "removeLabel JSON build error: " + e.getMessage()); errorMessage.postValue("Remove label JSON error"); return; }
+
         RequestBody body = RequestBody.create(JSON, json.toString());
         Request request = new Request.Builder()
                 .url("http://10.0.2.2:3000/api/mails/" + mailId + "/label")
                 .patch(body)
                 .header("Authorization", "Bearer " + jwtToken)
                 .build();
-        final String labelId = label;
+
         client.newCall(request).enqueue(new Callback() {
             @Override public void onFailure(Call call, IOException e) {
                 Log.e(TAG, "removeLabel network failure: " + e.getMessage());
@@ -255,19 +302,21 @@ public class MailViewModel extends ViewModel {
             }
 
             @Override public void onResponse(Call call, Response response) throws IOException {
-                Log.d(TAG, "removeLabel server response code=" + response.code());
-                if (!response.isSuccessful()) {
-                    errorMessage.postValue("Remove label failed: " + response.code());
-                    return;
-                }
-                ioExecutor.execute(() -> {
-                    try {
-                        mailRepository.removeLabelFromMailLocal(mailId, labelId);
-                        tryUpdateLabelsInUi(mailId, false, labelId);
-                    } catch (Exception ex) {
-                        Log.e(TAG, "removeLabel: local Room remove error: " + ex.getMessage(), ex);
+                try (Response r = response) {
+                    Log.d(TAG, "removeLabel server response code=" + r.code());
+                    if (!r.isSuccessful()) {
+                        errorMessage.postValue("Remove label failed: " + r.code());
+                        return;
                     }
-                });
+                    ioExecutor.execute(() -> {
+                        try {
+                            mailRepository.removeLabelFromMailLocal(mailId, labelLocal);
+                            tryUpdateLabelsInUi(mailId, false, labelLocal);
+                        } catch (Exception ex) {
+                            Log.e(TAG, "removeLabel: local Room remove error: " + ex.getMessage(), ex);
+                        }
+                    });
+                }
             }
         });
     }
@@ -279,17 +328,21 @@ public class MailViewModel extends ViewModel {
     }
 
     public void removeLabelWithCallback(String mailId, String label, String jwtToken, Runnable onSuccess) {
-        label = normalizeLabel(label);
-        Log.d(TAG, "removeLabelWithCallback: mailId=" + mailId + " label=" + label);
+        String labelLocal = normalizeLabelLocal(label);
+        String labelServer = apiLabel(labelLocal);
+        Log.d(TAG, "removeLabelWithCallback: mailId=" + mailId + " labelLocal=" + labelLocal + " labelServer=" + labelServer);
+
         JSONObject json = new JSONObject();
-        try { json.put("label", label); json.put("action", "remove"); }
+        try { json.put("label", labelServer); json.put("action", "remove"); }
         catch (Exception e) { Log.e(TAG, "removeLabelWithCallback JSON build error: " + e.getMessage()); errorMessage.postValue("Remove label JSON error"); return; }
+
         RequestBody body = RequestBody.create(JSON, json.toString());
         Request request = new Request.Builder()
                 .url("http://10.0.2.2:3000/api/mails/" + mailId + "/label")
                 .patch(body)
                 .header("Authorization", "Bearer " + jwtToken)
                 .build();
+
         client.newCall(request).enqueue(new Callback() {
             @Override public void onFailure(Call call, IOException e) {
                 Log.e(TAG, "removeLabelWithCallback network failure: " + e.getMessage());
@@ -297,9 +350,11 @@ public class MailViewModel extends ViewModel {
             }
 
             @Override public void onResponse(Call call, Response response) throws IOException {
-                Log.d(TAG, "removeLabelWithCallback server response code=" + response.code());
-                if (response.isSuccessful()) onSuccess.run();
-                else errorMessage.postValue("Remove label failed: " + response.code());
+                try (Response r = response) {
+                    Log.d(TAG, "removeLabelWithCallback server response code=" + r.code());
+                    if (r.isSuccessful()) onSuccess.run();
+                    else errorMessage.postValue("Remove label failed: " + r.code());
+                }
             }
         });
     }
@@ -318,120 +373,136 @@ public class MailViewModel extends ViewModel {
             }
 
             @Override public void onResponse(Call call, Response response) {
-                int code = response.code();
-                Log.d(TAG, "deleteMail server response code=" + code);
-                if (!response.isSuccessful()) {
-                    errorMessage.postValue("Delete failed: " + code);
-                    return;
-                }
-                ioExecutor.execute(() -> {
-                    try {
-                        Log.d(TAG, "deleteMail: calling mailRepository.deleteMailLocal for " + mailId);
-                        mailRepository.deleteMailLocal(mailId);
-                        Log.d(TAG, "deleteMail: local Room delete completed for " + mailId);
-                    } catch (Exception ex) {
-                        Log.e(TAG, "deleteMail: local Room delete error: " + ex.getMessage(), ex);
+                try (Response r = response) {
+                    int code = r.code();
+                    Log.d(TAG, "deleteMail server response code=" + code);
+                    if (!r.isSuccessful()) {
+                        errorMessage.postValue("Delete failed: " + code);
+                        return;
                     }
-                });
+                    ioExecutor.execute(() -> {
+                        try {
+                            mailRepository.deleteMailLocal(mailId);
+                        } catch (Exception ex) {
+                            Log.e(TAG, "deleteMail: local Room delete error: " + ex.getMessage(), ex);
+                        }
+                    });
+                }
             }
         });
     }
 
-    // Move to label with offline-first + pending fallback
+    /* =========================
+       Move (offline-first) — fixed server/local mapping
+       ========================= */
+
     public void moveToLabelOfflineFirst(String mailId, String targetLabelRaw, String jwtToken, Context appContext, Runnable onSuccessUi) {
-        String targetLabel = normalizeLabel(targetLabelRaw);
-        if (targetLabel == null || targetLabel.isEmpty()) {
+        String targetLabelLocal = normalizeLabelLocal(targetLabelRaw); // Room/UI
+        String targetLabelServer = apiLabel(targetLabelLocal);         // REST
+
+        if (targetLabelLocal == null || targetLabelLocal.isEmpty()) {
             errorMessage.postValue("Invalid target label");
             return;
         }
 
-        // Update UI now for snappy UX
-        tryUpdateMoveInUi(mailId, targetLabel);
+        // Update UI now for snappy UX (local = primary)
+        tryUpdateMoveInUi(mailId, targetLabelLocal);
 
         // Always update local Room immediately
         ioExecutor.execute(() -> {
             try {
                 String ownerId = getOwnerId(appContext);
-                List<String> removed = mailRepository.moveMailLocal(mailId, ownerId != null ? ownerId : "", targetLabel);
+                List<String> removedLocal = mailRepository.moveMailLocal(mailId, ownerId != null ? ownerId : "", targetLabelLocal);
 
                 if (jwtToken == null || jwtToken.isEmpty()) {
-                    // Offline: queue pending operation
-                    enqueueMovePending(mailId, targetLabel, removed);
+                    // Offline: queue pending operation (stores local names)
+                    enqueueMovePending(mailId, targetLabelLocal, removedLocal);
                     if (onSuccessUi != null) onSuccessUi.run();
                     return;
                 }
 
-                // Try online server move: remove then add
+                // Try online: remove old labels on server (convert each to server form)
                 boolean allOk = true;
-                for (String label : removed) {
-                    if ("starred".equalsIgnoreCase(label)) continue;
-                    JSONObject json = new JSONObject();
-                    json.put("label", label);
-                    json.put("action", "remove");
-                    RequestBody body = RequestBody.create(JSON, json.toString());
-                    Request req = new Request.Builder()
-                            .url("http://10.0.2.2:3000/api/mails/" + mailId + "/label")
-                            .patch(body)
-                            .header("Authorization", "Bearer " + jwtToken)
-                            .build();
-                    Response resp = client.newCall(req).execute();
-                    if (!resp.isSuccessful()) {
-                        allOk = false;
+                if (removedLocal != null) {
+                    for (String labelLocal : removedLocal) {
+                        if ("starred".equalsIgnoreCase(labelLocal)) continue;
+                        String labelServer = apiLabel(labelLocal);
+
+                        JSONObject json = new JSONObject();
+                        json.put("label", labelServer);
+                        json.put("action", "remove");
+                        RequestBody body = RequestBody.create(JSON, json.toString());
+                        Request req = new Request.Builder()
+                                .url("http://10.0.2.2:3000/api/mails/" + mailId + "/label")
+                                .patch(body)
+                                .header("Authorization", "Bearer " + jwtToken)
+                                .build();
+                        try (Response resp = client.newCall(req).execute()) {
+                            if (!resp.isSuccessful()) {
+                                allOk = false;
+                            }
+                        }
                     }
-                    if (resp.body() != null) resp.close();
                 }
 
+                // Add target label on server (server = inbox, local = primary)
                 JSONObject addJson = new JSONObject();
-                addJson.put("label", targetLabel);
+                addJson.put("label", targetLabelServer);
                 RequestBody addBody = RequestBody.create(JSON, addJson.toString());
                 Request addReq = new Request.Builder()
                         .url("http://10.0.2.2:3000/api/mails/" + mailId + "/label")
                         .patch(addBody)
                         .header("Authorization", "Bearer " + jwtToken)
                         .build();
-                Response addResp = client.newCall(addReq).execute();
-                if (!addResp.isSuccessful()) {
-                    allOk = false;
+                try (Response addResp = client.newCall(addReq).execute()) {
+                    if (!addResp.isSuccessful()) {
+                        allOk = false;
+                    }
                 }
-                if (addResp.body() != null) addResp.close();
 
                 if (!allOk) {
-                    // Keep local state and queue a move to be retried later
-                    enqueueMovePending(mailId, targetLabel, removed);
+                    // Keep local state and queue a move to be retried later (local names)
+                    enqueueMovePending(mailId, targetLabelLocal, removedLocal);
                 }
                 if (onSuccessUi != null) onSuccessUi.run();
             } catch (Exception e) {
                 Log.e(TAG, "moveToLabelOfflineFirst error: " + e.getMessage(), e);
                 // Keep local state; enqueue pending op as fallback
-                enqueueMovePending(mailId, targetLabel, null);
+                enqueueMovePending(mailId, targetLabelLocal, null);
                 if (onSuccessUi != null) onSuccessUi.run();
             }
         });
     }
 
-    private void enqueueMovePending(String mailId, String targetLabel, List<String> removed) {
+    private void enqueueMovePending(String mailId, String targetLabelLocal, List<String> removedLocal) {
         try {
-            pendingRepo.enqueueLabelMove(mailId, targetLabel, removed != null ? removed : new ArrayList<>());
-            Log.d(TAG, "enqueueMovePending: enqueued move op for mail=" + mailId + " target=" + targetLabel);
+            pendingRepo.enqueueLabelMove(mailId, targetLabelLocal, removedLocal != null ? removedLocal : new ArrayList<>());
+            Log.d(TAG, "enqueueMovePending: enqueued move op for mail=" + mailId + " target=" + targetLabelLocal);
         } catch (Exception e) {
             Log.e(TAG, "enqueueMovePending error: " + e.getMessage(), e);
         }
     }
 
-    private void tryUpdateLabelsInUi(String mailId, boolean add, String labelId) {
+    /* =========================
+       UI helpers
+       ========================= */
+
+    private void tryUpdateLabelsInUi(String mailId, boolean add, String labelLocal) {
         try {
             JSONObject cur = mailData.getValue();
             if (cur == null) return;
             if (!mailId.equals(cur.optString("id"))) return;
-            if ("starred".equalsIgnoreCase(labelId)) {
+
+            if ("starred".equalsIgnoreCase(labelLocal)) {
                 cur.put("starred", add);
             }
+
             List<String> labels = MailMapper.labelIdsFromJson(cur);
             if (add) {
-                if (!labels.contains(labelId)) labels.add(labelId);
+                if (!labels.contains(labelLocal)) labels.add(labelLocal);
             } else {
                 List<String> newList = new ArrayList<>();
-                for (String l : labels) if (!l.equalsIgnoreCase(labelId)) newList.add(l);
+                for (String l : labels) if (!l.equalsIgnoreCase(labelLocal)) newList.add(l);
                 labels = newList;
             }
             JSONArray newArr = new JSONArray();
@@ -443,7 +514,7 @@ public class MailViewModel extends ViewModel {
         }
     }
 
-    private void tryUpdateMoveInUi(String mailId, String targetLabel) {
+    private void tryUpdateMoveInUi(String mailId, String targetLabelLocal) {
         try {
             JSONObject cur = mailData.getValue();
             if (cur == null) return;
@@ -460,7 +531,7 @@ public class MailViewModel extends ViewModel {
                     after.add(l);
                 }
             }
-            if (!after.contains(targetLabel)) after.add(targetLabel);
+            if (!after.contains(targetLabelLocal)) after.add(targetLabelLocal);
 
             JSONArray newArr = new JSONArray();
             for (String l : after) newArr.put(l);
