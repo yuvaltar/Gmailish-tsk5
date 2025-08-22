@@ -6,7 +6,7 @@ Developed as part of a series of assignments, this project showcases advanced An
 
 ## Demo Video 📹
 
-Watch this 5-minute walkthrough to see Gmailish in action: user registration, email composition, labeling, search, theme toggling, and offline-first features like composing/sending while disconnected with auto-sync on reconnect. The demo also shows backend integration with MongoDB (e.g., refreshing to verify new users, labels, and mail relations).
+Watch this 5-minute walkthrough to see Gmailish in action: user registration, email composition, labeling, search, theme toggling, and offline-first features like composing/sending while disconnected with auto-sync on reconnect. The demo also shows backend integration with MongoDB (e.g., refreshing to verify new users, labels, and mail relations) and with room.
 
 [![Watch the demo](https://img.youtube.com/vi/HxQslOWTtrQ/hqdefault.jpg)](https://www.youtube.com/watch?v=HxQslOWTtrQ)
 
@@ -69,49 +69,10 @@ Key code highlights include robust timestamp parsing (handling ISO, epoch, and J
 3. **Offline Mode**: Actions like sending or labeling create local changes and queue "pending operations" in Room. A worker monitors connectivity and retries.
 4. **Sync Flow**: Upon reconnection, the worker processes queues (e.g., POST to `/api/mails` for sends) and resolves local IDs to server ones.
 
-This design ensures a smooth experience, even in low-connectivity scenarios, making it ideal for mobile users.
-
-## Development Insights 💡
-From the provided code and demo video:
-- The app integrates seamlessly with a local backend (emulator IP: 10.0.2.2:3000), using MongoDB for server-side storage as demonstrated in the video (e.g., reloading MongoDB to verify user creation, label additions, and email syncing).
-- Offline demos show composing/sending without Wi-Fi, with instant syncing on reconnection.
-- Edge cases like empty drafts, password validation, and label relations (via cross-reference tables) are handled gracefully.
+## 📎 Related Wiki Pages
 
 
-## Running the App (locally) 🏃‍♂️
-To get Gmailish up and running on your development environment:
+Running the App: https://github.com/yuvaltar/Gmailish-tsk5/wiki/Running-the-App
 
-1. **Prerequisites**: Ensure you have Android Studio (version 4.0+), Node.js (for the backend), and MongoDB installed. The app targets Android API level 26+ for optimal features like modern date handling.
+Visual User Guide: https://github.com/yuvaltar/Gmailish-tsk5/wiki/Visual-User-Guide
 
-2. **Backend Setup**:
-   - Start MongoDB locally (e.g., `mongod` command).
-   - Navigate to the backend directory (assuming it's part of the project or a companion repo).
-   - Install dependencies: `npm install`.
-   - Navigate to the "/server" directory in your shell
-   - Run the server: `node app.js`
-   
-## Running the App (via Dcoker) 🏃‍♂️
-1. **Prerequisites**: Ensure you have Android Studio (version 4.0+), Node.js (for the backend), and MongoDB installed. The app targets Android API level 26+ for optimal features like modern date handling.
-
-2. **Backend Setup**:
-   - run the backend via Docker using the following steps:
-
-      1. Build and start all containers:
-
-          docker-compose up --build
-
-      2. Run without rebuilding:
-
-          docker-compose up
-
-
-### The android setup is identical, no matter if your backend is ran locally or via docker 
-
-
-3. **Android App Setup**:
-   - Open the project in Android Studio.
-   - Sync Gradle and build the app.
-   - Use an android phone/emulator (any android emulator will work, however we recommend the "Medium Phone API 35" for the best experience) to run it – the backend is accessed via `http://10.0.2.2:3000` .
-   - For physical devices, update the URL in code to your machine's IP (e.g., `http://192.168.1.x:3000`).
-
-4. **Testing Offline**: Disable Wi-Fi in the emulator to simulate offline mode and verify queuing/sync behaviors.
