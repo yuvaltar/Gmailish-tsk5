@@ -1,19 +1,5 @@
 version: "3.9"
 services:
-  react:
-    build:
-      context: ./react
-    ports:
-      - "3001:3001"
-    volumes:
-      - ./react:/app
-      - /app/node_modules
-    environment:
-      - PORT=3001
-      - REACT_APP_API_URL=http://server:3000
-    stdin_open: true
-    tty: true
-
   server:
     build:
       context: ./server
@@ -24,14 +10,18 @@ services:
       - /usr/src/app/node_modules
     environment:
       - PORT=3000
+      - HOST=0.0.0.0
       - CPP_PORT=4000
       - CPP_HOST=cpp_server
       - JWT_SECRET=someSuperSecretStringHere
-      - HOST=0.0.0.0
+      - MONGO_URL=mongodb://mongo:27017/gmailish?replicaSet=rs0
     command: ["npm", "run", "dev"]
     restart: unless-stopped
     depends_on:
-      - cpp_server
+      cpp_server:
+        condition: service_started
+      mongo:
+        condition: service_healthy
 
   cpp_server:
     build:
@@ -41,3 +31,20 @@ services:
       - "4000:4000"
     command: ["./cpp_server", "4000", "1024", "3", "5"]
     restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"         # optional: expose to host
+    volumes:
+      - mongo_data:/data/db
+      - ./mongo-init:/docker-entrypoint-initdb.d  # optional: seed scripts
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "mongodb://localhost:27017", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  mongo_data:
