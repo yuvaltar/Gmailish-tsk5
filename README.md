@@ -1,6 +1,6 @@
-# Gmailish: An Offline-First Android Email Client ✨
+# Gmailish: An Android Email App ✨
 
-Gmailish is a modern Android application designed to mimic the functionality of Gmail while prioritizing offline usability. It serves as a client for a custom email backend (built on Node.js and MongoDB as part of this project), emphasizing seamless synchronization, local caching, and robust handling of network interruptions. The app allows users to manage emails, labels, and compositions even without an internet connection, queuing actions for automatic syncing when online.
+Gmailish is a modern Android application designed to mimic the functionality of Gmail. It serves as a client for a custom email backend (built on Node.js and MongoDB as part of this project), emphasizing seamless synchronization, local caching, and robust handling of network interruptions. The app allows users to manage emails, labels, and compositions, and even supports the relevant functionality in "offline-mode", where the user is without an internet connection, queuing actions for automatic syncing when online.
 
 Developed as part of a series of assignments, this project showcases advanced Android development techniques, including MVVM architecture, Room persistence, background workers, and REST API integration. It's built to be user-friendly, with a clean interface supporting light/dark modes and intuitive navigation.
 
@@ -78,7 +78,7 @@ From the provided code and demo video:
 - Edge cases like empty drafts, password validation, and label relations (via cross-reference tables) are handled gracefully.
 
 
-## Running the App 🏃‍♂️
+## Running the App (locally) 🏃‍♂️
 To get Gmailish up and running on your development environment:
 
 1. **Prerequisites**: Ensure you have Android Studio (version 4.0+), Node.js (for the backend), and MongoDB installed. The app targets Android API level 26+ for optimal features like modern date handling.
@@ -87,12 +87,31 @@ To get Gmailish up and running on your development environment:
    - Start MongoDB locally (e.g., `mongod` command).
    - Navigate to the backend directory (assuming it's part of the project or a companion repo).
    - Install dependencies: `npm install`.
-   - Run the server: `node server.js` (or equivalent), ensuring it listens on port 3000.
+   - Navigate to the "/server" directory in your shell
+   - Run the server: `node app.js`
+   
+## Running the App (via Dcoker) 🏃‍♂️
+1. **Prerequisites**: Ensure you have Android Studio (version 4.0+), Node.js (for the backend), and MongoDB installed. The app targets Android API level 26+ for optimal features like modern date handling.
+
+2. **Backend Setup**:
+   - run the backend via Docker using the following steps:
+
+      1. Build and start all containers:
+
+          docker-compose up --build
+
+      2. Run without rebuilding:
+
+          docker-compose up
+
+
+### The android setup is identical, no matter if your backend is ran locally or via docker 
+
 
 3. **Android App Setup**:
    - Open the project in Android Studio.
    - Sync Gradle and build the app.
-   - Use an emulator (e.g., Pixel 3 API 30) to run it – the backend is accessed via `http://10.0.2.2:3000` (emulator's localhost alias).
+   - Use an android phone/emulator (any android emulator will work, however we recommend the "Medium Phone API 35" for the best experience) to run it – the backend is accessed via `http://10.0.2.2:3000` .
    - For physical devices, update the URL in code to your machine's IP (e.g., `http://192.168.1.x:3000`).
 
 4. **Testing Offline**: Disable Wi-Fi in the emulator to simulate offline mode and verify queuing/sync behaviors.
