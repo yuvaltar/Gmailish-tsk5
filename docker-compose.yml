@@ -14,7 +14,7 @@ services:
       - CPP_PORT=4000
       - CPP_HOST=cpp_server
       - JWT_SECRET=someSuperSecretStringHere
-      - MONGO_URI=mongodb://mongo:27017/gmailish
+      - MONGODB_URI=mongodb://mongo:27017/gmailish
     command: ["npm", "run", "dev"]
     restart: unless-stopped
     depends_on:
